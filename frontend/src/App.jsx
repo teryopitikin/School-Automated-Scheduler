@@ -9,6 +9,7 @@ import Departments from './pages/Departments';
 import Courses from './pages/Courses';
 import Faculty from './pages/Faculty';
 import Rooms from './pages/Rooms';
+import Dashboard from './pages/Dashboard';
 
 function Placeholder({ title }) {
   return <Typography variant="h5">{title}</Typography>;
@@ -30,7 +31,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route path="/" element={<Placeholder title="Dashboard" />} />
+        <Route path="/" element={<Dashboard />} />
         <Route path="/academic-periods" element={<AcademicPeriods />} />
         <Route path="/programs" element={<Programs />} />
         <Route path="/departments" element={<Departments />} />
