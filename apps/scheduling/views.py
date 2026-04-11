@@ -1,6 +1,9 @@
-from rest_framework import viewsets
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
 
 from apps.core.mixins import TenantQuerySetMixin
+from .conflicts import detect_conflicts
 from .models import (
     AcademicPeriod, Program, Department, Course, Section,
     Faculty, FacultyAvailability, Room, ScheduleEntry, ScheduleConfig,
@@ -103,6 +106,55 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     serializer_class = ScheduleEntrySerializer
     filterset_fields = ['academic_period', 'faculty', 'room', 'day_of_week', 'entry_type', 'group_id']
     ordering_fields = ['day_of_week', 'time_start']
+
+    def perform_create(self, serializer):
+        tenant = getattr(self.request, 'tenant', None) or self.request.user.tenant
+        serializer.save(tenant=tenant)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        entry = serializer.instance
+        conflicts = detect_conflicts(entry)
+        data = serializer.data
+        data['conflicts'] = conflicts
+        if conflicts['hard']:
+            data['conflict_warning'] = 'This entry has hard conflicts — consider resolving them.'
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        entry = serializer.instance
+        conflicts = detect_conflicts(entry)
+        data = serializer.data
+        data['conflicts'] = conflicts
+        return Response(data)
+
+    @action(detail=False, methods=['get'])
+    def conflicts(self, request):
+        """List all conflicts across the current academic period."""
+        period_id = request.query_params.get('academic_period')
+        if not period_id:
+            return Response(
+                {'detail': 'academic_period query parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        entries = self.get_queryset().filter(academic_period_id=period_id)
+        all_conflicts = []
+        for entry in entries:
+            result = detect_conflicts(entry)
+            if result['hard'] or result['warnings']:
+                all_conflicts.append({
+                    'entry_id': entry.pk,
+                    'entry': str(entry),
+                    **result,
+                })
+        return Response(all_conflicts)
 
 
 class ScheduleConfigViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
