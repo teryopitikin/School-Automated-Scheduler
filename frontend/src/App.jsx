@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard';
 import Configuration from './pages/Configuration';
 import Reports from './pages/Reports';
 import ImportExport from './pages/ImportExport';
+import ScheduleBuilder from './pages/ScheduleBuilder';
 
 function Placeholder({ title }) {
   return <Typography variant="h5">{title}</Typography>;
@@ -41,7 +42,7 @@ export default function App() {
         <Route path="/courses" element={<Courses />} />
         <Route path="/faculty" element={<Faculty />} />
         <Route path="/rooms" element={<Rooms />} />
-        <Route path="/schedule" element={<Placeholder title="Schedule Builder" />} />
+        <Route path="/schedule" element={<ScheduleBuilder />} />
         <Route path="/config" element={<Configuration />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/import-export" element={<ImportExport />} />
