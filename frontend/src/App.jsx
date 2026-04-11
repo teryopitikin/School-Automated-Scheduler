@@ -3,9 +3,12 @@ import { CircularProgress, Box, Typography } from '@mui/material';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import AppLayout from './layouts/AppLayout';
-import Departments from './pages/Departments';
+import AcademicPeriods from './pages/AcademicPeriods';
 import Programs from './pages/Programs';
+import Departments from './pages/Departments';
 import Courses from './pages/Courses';
+import Faculty from './pages/Faculty';
+import Rooms from './pages/Rooms';
 
 function Placeholder({ title }) {
   return <Typography variant="h5">{title}</Typography>;
@@ -28,12 +31,12 @@ export default function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route path="/" element={<Placeholder title="Dashboard" />} />
-        <Route path="/academic-periods" element={<Placeholder title="Academic Periods" />} />
+        <Route path="/academic-periods" element={<AcademicPeriods />} />
         <Route path="/programs" element={<Programs />} />
         <Route path="/departments" element={<Departments />} />
         <Route path="/courses" element={<Courses />} />
-        <Route path="/faculty" element={<Placeholder title="Faculty" />} />
-        <Route path="/rooms" element={<Placeholder title="Rooms" />} />
+        <Route path="/faculty" element={<Faculty />} />
+        <Route path="/rooms" element={<Rooms />} />
         <Route path="/schedule" element={<Placeholder title="Schedule Builder" />} />
         <Route path="/config" element={<Placeholder title="Configuration" />} />
         <Route path="/reports" element={<Placeholder title="Reports" />} />
