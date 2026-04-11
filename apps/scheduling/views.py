@@ -1,5 +1,7 @@
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, parser_classes, permission_classes
+from rest_framework.parsers import MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.core.mixins import TenantQuerySetMixin
@@ -252,3 +254,35 @@ class ScheduleConfigViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = ScheduleConfig.objects.select_related('academic_period').all()
     serializer_class = ScheduleConfigSerializer
     filterset_fields = ['academic_period']
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser])
+def import_excel_view(request):
+    import openpyxl
+
+    from .importers import import_excel
+
+    file = request.FILES.get('file')
+    period_id = request.data.get('academic_period')
+
+    if not file:
+        return Response({'detail': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not period_id:
+        return Response({'detail': 'academic_period is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    tenant = getattr(request, 'tenant', None) or request.user.tenant
+
+    try:
+        period = AcademicPeriod.objects.get(pk=period_id, tenant=tenant)
+    except AcademicPeriod.DoesNotExist:
+        return Response({'detail': 'Academic period not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        wb = openpyxl.load_workbook(file)
+    except Exception:
+        return Response({'detail': 'Invalid Excel file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    result = import_excel(wb, tenant, period)
+    return Response(result, status=status.HTTP_201_CREATED)
