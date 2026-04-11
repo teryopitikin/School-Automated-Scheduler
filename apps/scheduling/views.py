@@ -233,6 +233,53 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
                 })
         return Response(all_conflicts)
 
+    @action(detail=False, methods=['post'])
+    def suggest(self, request):
+        from .suggestions import generate_suggestions, generate_paired_suggestions
+
+        course_id = request.data.get('course')
+        section_ids = request.data.get('sections', [])
+        faculty_id = request.data.get('faculty')
+        period_id = request.data.get('academic_period')
+        num_days = request.data.get('num_days', 1)
+        class_size = request.data.get('class_size', 0)
+
+        if not course_id or not period_id:
+            return Response(
+                {'detail': 'course and academic_period are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+
+        try:
+            course = Course.objects.get(pk=course_id, tenant=tenant)
+            period = AcademicPeriod.objects.get(pk=period_id, tenant=tenant)
+        except (Course.DoesNotExist, AcademicPeriod.DoesNotExist):
+            return Response({'detail': 'Course or period not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        sections = list(Section.objects.filter(pk__in=section_ids, tenant=tenant))
+        faculty = None
+        if faculty_id:
+            try:
+                faculty = Faculty.objects.get(pk=faculty_id, tenant=tenant)
+            except Faculty.DoesNotExist:
+                return Response({'detail': 'Faculty not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if course.has_lab:
+            suggestions = generate_paired_suggestions(
+                tenant=tenant, period=period, course=course,
+                sections=sections, faculty=faculty, class_size=class_size,
+            )
+        else:
+            suggestions = generate_suggestions(
+                tenant=tenant, period=period, course=course,
+                sections=sections, faculty=faculty,
+                num_days=num_days, class_size=class_size,
+            )
+
+        return Response({'suggestions': suggestions})
+
     @action(detail=False, methods=['get'])
     def stats(self, request):
         """Dashboard statistics for an academic period."""
