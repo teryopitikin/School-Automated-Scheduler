@@ -23,6 +23,80 @@ class AcademicPeriodViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     ordering_fields = ['year_start', 'year_end', 'semester', 'created_at']
     filterset_fields = ['status', 'semester']
 
+    @action(detail=True, methods=['post'])
+    def clone(self, request, pk=None):
+        """Clone sections, config, and optionally faculty availability to a new period."""
+        source = self.get_object()
+        name = request.data.get('name')
+        year_start = request.data.get('year_start')
+        year_end = request.data.get('year_end')
+        semester = request.data.get('semester')
+        clone_availability = request.data.get('clone_availability', False)
+
+        if not all([name, year_start, year_end, semester]):
+            return Response(
+                {'detail': 'name, year_start, year_end, and semester are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+
+        new_period = AcademicPeriod.objects.create(
+            tenant=tenant, name=name, year_start=year_start,
+            year_end=year_end, semester=semester, status='DRAFT',
+        )
+
+        source_sections = Section.objects.filter(tenant=tenant, academic_period=source)
+        sections_created = 0
+        for sec in source_sections:
+            Section.objects.create(
+                tenant=tenant, program=sec.program,
+                academic_period=new_period,
+                year_level=sec.year_level,
+                section_number=sec.section_number,
+            )
+            sections_created += 1
+
+        config_cloned = False
+        try:
+            src_config = ScheduleConfig.objects.get(tenant=tenant, academic_period=source)
+            ScheduleConfig.objects.create(
+                tenant=tenant, academic_period=new_period,
+                earliest_start_time=src_config.earliest_start_time,
+                latest_end_time=src_config.latest_end_time,
+                time_slot_granularity_minutes=src_config.time_slot_granularity_minutes,
+                operating_days=src_config.operating_days,
+                break_periods=src_config.break_periods,
+                weight_faculty_priority=src_config.weight_faculty_priority,
+                weight_room_proximity=src_config.weight_room_proximity,
+                weight_time_gap_minimization=src_config.weight_time_gap_minimization,
+                weight_load_distribution=src_config.weight_load_distribution,
+            )
+            config_cloned = True
+        except ScheduleConfig.DoesNotExist:
+            pass
+
+        avail_created = 0
+        if clone_availability:
+            src_avails = FacultyAvailability.objects.filter(academic_period=source)
+            for avail in src_avails:
+                FacultyAvailability.objects.create(
+                    faculty=avail.faculty, academic_period=new_period,
+                    day_of_week=avail.day_of_week,
+                    time_start=avail.time_start, time_end=avail.time_end,
+                    availability_type=avail.availability_type,
+                )
+                avail_created += 1
+
+        return Response({
+            'academic_period': AcademicPeriodSerializer(new_period).data,
+            'cloned': {
+                'sections': sections_created,
+                'config': config_cloned,
+                'faculty_availability': avail_created,
+            },
+        }, status=status.HTTP_201_CREATED)
+
 
 class ProgramViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = Program.objects.all()
