@@ -11,6 +11,8 @@ import Faculty from './pages/Faculty';
 import Rooms from './pages/Rooms';
 import Dashboard from './pages/Dashboard';
 import Configuration from './pages/Configuration';
+import Reports from './pages/Reports';
+import ImportExport from './pages/ImportExport';
 
 function Placeholder({ title }) {
   return <Typography variant="h5">{title}</Typography>;
@@ -41,8 +43,8 @@ export default function App() {
         <Route path="/rooms" element={<Rooms />} />
         <Route path="/schedule" element={<Placeholder title="Schedule Builder" />} />
         <Route path="/config" element={<Configuration />} />
-        <Route path="/reports" element={<Placeholder title="Reports" />} />
-        <Route path="/import-export" element={<Placeholder title="Import / Export" />} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/import-export" element={<ImportExport />} />
       </Route>
     </Routes>
   );
