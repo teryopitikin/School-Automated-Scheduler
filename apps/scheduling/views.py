@@ -156,6 +156,23 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
                 })
         return Response(all_conflicts)
 
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Dashboard statistics for an academic period."""
+        from .stats import compute_stats
+        period_id = request.query_params.get('academic_period')
+        if not period_id:
+            return Response(
+                {'detail': 'academic_period query parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        try:
+            period = AcademicPeriod.objects.get(pk=period_id, tenant=tenant)
+        except AcademicPeriod.DoesNotExist:
+            return Response({'detail': 'Academic period not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(compute_stats(tenant, period))
+
 
 class ScheduleConfigViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     queryset = ScheduleConfig.objects.select_related('academic_period').all()
