@@ -4,6 +4,7 @@ import { Warning } from '@mui/icons-material';
 import CourseList from './CourseList';
 import TimetableGrid from './TimetableGrid';
 import AssignmentDialog from './AssignmentDialog';
+import ConflictDrawer from './ConflictDrawer';
 import { fetchCourses } from '../../api/courses';
 import { fetchSchedules, suggestSlots, fetchConflicts } from '../../api/schedules';
 import { fetchSections } from '../../api/sections';
@@ -23,6 +24,8 @@ export default function ScheduleBuilder() {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [suggestions, setSuggestions] = useState(null);
   const [conflictCount, setConflictCount] = useState(0);
+  const [conflicts, setConflicts] = useState([]);
+  const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
   const [viewTab, setViewTab] = useState(0); // 0=Section, 1=Faculty, 2=Room
   const [config, setConfig] = useState(null);
 
@@ -59,7 +62,9 @@ export default function ScheduleBuilder() {
     }).catch(() => {});
     fetchConflicts({ academic_period: activePeriod }).then((res) => {
       const c = res.data.results ?? res.data;
-      setConflictCount(Array.isArray(c) ? c.length : 0);
+      const arr = Array.isArray(c) ? c : [];
+      setConflicts(arr);
+      setConflictCount(arr.length);
     }).catch(() => {});
   }, [activePeriod]);
 
@@ -77,7 +82,9 @@ export default function ScheduleBuilder() {
     // Refresh conflict count
     fetchConflicts({ academic_period: activePeriod }).then((res) => {
       const c = res.data.results ?? res.data;
-      setConflictCount(Array.isArray(c) ? c.length : 0);
+      const arr = Array.isArray(c) ? c : [];
+      setConflicts(arr);
+      setConflictCount(arr.length);
     }).catch(() => {});
   };
 
@@ -142,7 +149,9 @@ export default function ScheduleBuilder() {
                 : 'Select a section'}
             </Typography>
             {conflictCount > 0 && (
-              <Badge badgeContent={conflictCount} color="error">
+              <Badge badgeContent={conflictCount} color="error"
+                sx={{ cursor: 'pointer' }}
+                onClick={() => setConflictDrawerOpen(true)}>
                 <Warning color="error" />
               </Badge>
             )}
@@ -185,6 +194,11 @@ export default function ScheduleBuilder() {
         course={selectedCourse} section={selectedSection} periodId={activePeriod}
         slotDay={assignSlot.day} slotHour={assignSlot.hour} suggestion={assignSlot.suggestion}
         onSaved={() => { reload(); setSelectedCourse(null); }}
+      />
+
+      <ConflictDrawer
+        open={conflictDrawerOpen} onClose={() => setConflictDrawerOpen(false)}
+        conflicts={conflicts}
       />
     </Box>
   );
