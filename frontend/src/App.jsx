@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import { CircularProgress, Box, Typography } from '@mui/material';
+import { CircularProgress, Box } from '@mui/material';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import AppLayout from './layouts/AppLayout';
@@ -14,10 +14,6 @@ import Configuration from './pages/Configuration';
 import Reports from './pages/Reports';
 import ImportExport from './pages/ImportExport';
 import ScheduleBuilder from './pages/ScheduleBuilder';
-
-function Placeholder({ title }) {
-  return <Typography variant="h5">{title}</Typography>;
-}
 
 export default function App() {
   const { user, loading } = useAuth();
