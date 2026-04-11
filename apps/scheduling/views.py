@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
@@ -286,3 +287,45 @@ def import_excel_view(request):
 
     result = import_excel(wb, tenant, period)
     return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_excel_view(request):
+    from .exporters import export_schedule, export_faculty_loading, export_room_utilization
+
+    period_id = request.query_params.get('academic_period')
+    export_type = request.query_params.get('type', 'schedule')
+
+    if not period_id:
+        return Response({'detail': 'academic_period is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    tenant = getattr(request, 'tenant', None) or request.user.tenant
+
+    try:
+        period = AcademicPeriod.objects.get(pk=period_id, tenant=tenant)
+    except AcademicPeriod.DoesNotExist:
+        return Response({'detail': 'Academic period not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    export_funcs = {
+        'schedule': export_schedule,
+        'faculty_loading': export_faculty_loading,
+        'room_utilization': export_room_utilization,
+    }
+
+    func = export_funcs.get(export_type)
+    if not func:
+        return Response(
+            {'detail': f'Invalid type. Choose from: {", ".join(export_funcs.keys())}'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    wb = func(tenant, period)
+
+    response = HttpResponse(
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    filename = f'{period.name.replace(" ", "_")}_{export_type}.xlsx'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    return response
