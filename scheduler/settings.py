@@ -56,7 +56,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'loader.urls'
+ROOT_URLCONF = 'scheduler.urls'
 
 TEMPLATES = [
     {
@@ -74,7 +74,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'loader.wsgi.application'
+WSGI_APPLICATION = 'scheduler.wsgi.application'
 
 # Database
 DATABASES = {
@@ -125,7 +125,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'loader.pagination.FlexiblePageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'scheduler.pagination.FlexiblePageNumberPagination',
     'PAGE_SIZE': 25,
 }
 

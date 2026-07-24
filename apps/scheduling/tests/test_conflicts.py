@@ -93,6 +93,7 @@ class TestDetectConflicts:
         assert result['warnings'] == []
 
     def test_room_conflict(self, tenant, period, course, course2, faculty, room, section):
+        """Same room + day + EXACT same time + different subject = conflict."""
         make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
 
         faculty2 = Faculty.objects.create(
@@ -104,12 +105,21 @@ class TestDetectConflicts:
             tenant=tenant, program=prog2, academic_period=period,
             year_level=1, section_number=1,
         )
-        entry2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0), [sec2])
+        entry2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (8, 0), (10, 0), [sec2])
         result = detect_conflicts(entry2)
         assert len(result['hard']) == 1
         assert result['hard'][0]['type'] == 'room'
 
-    def test_faculty_conflict(self, tenant, period, course, course2, faculty, section):
+    def test_no_conflict_partial_overlap(self, tenant, period, course, course2, faculty, room, section):
+        """Same room, different subject, but times only PARTIALLY overlap
+        (not a 100% match) — not flagged."""
+        make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        entry2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0), [section])
+        result = detect_conflicts(entry2)
+        assert result['hard'] == []
+
+    def test_no_faculty_conflict_different_room(self, tenant, period, course, course2, faculty, section):
+        """Same teacher, overlapping time, but DIFFERENT rooms — not flagged."""
         room1 = Room.objects.create(
             tenant=tenant, name='Room 101', room_type='LECTURE', capacity=40,
             building='Main', floor=1, sequence_number=1,
@@ -127,9 +137,10 @@ class TestDetectConflicts:
         )
         entry2 = make_entry(tenant, period, course2, faculty, room2, 'MON', (9, 0), (11, 0), [sec2])
         result = detect_conflicts(entry2)
-        assert any(c['type'] == 'faculty' for c in result['hard'])
+        assert result['hard'] == []
 
-    def test_section_conflict(self, tenant, period, course, course2, faculty, room, section):
+    def test_no_section_conflict_different_room(self, tenant, period, course, course2, faculty, room, section):
+        """Same section, overlapping time, but DIFFERENT rooms — not flagged."""
         make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
 
         faculty2 = Faculty.objects.create(
@@ -142,7 +153,21 @@ class TestDetectConflicts:
         )
         entry2 = make_entry(tenant, period, course2, faculty2, room2, 'MON', (9, 0), (11, 0), [section])
         result = detect_conflicts(entry2)
-        assert any(c['type'] == 'section' for c in result['hard'])
+        assert result['hard'] == []
+
+    def test_same_slot_is_conflict_regardless_of_subject(self, tenant, period, course, faculty, room, section):
+        """Same room + day + exact time is a conflict even for the SAME subject
+        (subject is not a parameter)."""
+        prog2 = Program.objects.create(tenant=tenant, code='BSF', name='BSF')
+        sec2 = Section.objects.create(
+            tenant=tenant, program=prog2, academic_period=period,
+            year_level=1, section_number=2,
+        )
+        make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        entry2 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [sec2])
+        result = detect_conflicts(entry2)
+        assert len(result['hard']) == 1
+        assert result['hard'][0]['type'] == 'room'
 
     def test_no_conflict_different_day(self, tenant, period, course, course2, faculty, room, section):
         make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])

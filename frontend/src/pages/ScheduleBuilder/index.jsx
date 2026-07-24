@@ -1,44 +1,49 @@
-import { useState, useEffect } from 'react';
-import { Box, TextField, Typography, Tabs, Tab, Badge } from '@mui/material';
+import { useState, useEffect, useMemo } from 'react';
+import { Box, TextField, Typography, Tabs, Tab, Badge, Chip, CircularProgress } from '@mui/material';
 import { Warning } from '@mui/icons-material';
 import CourseList from './CourseList';
 import TimetableGrid from './TimetableGrid';
 import AssignmentDialog from './AssignmentDialog';
+import EditDialog from './EditDialog';
 import ConflictDrawer from './ConflictDrawer';
 import { fetchCourses } from '../../api/courses';
-import { fetchSchedules, suggestSlots, fetchConflicts } from '../../api/schedules';
+import { fetchSchedules, fetchConflicts } from '../../api/schedules';
 import { fetchSections } from '../../api/sections';
 import { fetchAcademicPeriods } from '../../api/academicPeriods';
 import { fetchConfig } from '../../api/config';
 
 const DEFAULT_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const DEFAULT_HOURS = Array.from({ length: 14 }, (_, i) => i + 7);
+const ALL_SECTIONS = '__ALL__';
+// lens tab indices
+const SECTION = 0; const PROGRAM = 1; const FACULTY = 2; const ROOM = 3;
 
 export default function ScheduleBuilder() {
   const [periods, setPeriods] = useState([]);
   const [activePeriod, setActivePeriod] = useState('');
   const [sections, setSections] = useState([]);
   const [selectedSection, setSelectedSection] = useState('');
+  const [selectedProgram, setSelectedProgram] = useState('');
+  const [selectedFaculty, setSelectedFaculty] = useState('');
+  const [selectedRoom, setSelectedRoom] = useState('');
   const [courses, setCourses] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [suggestions, setSuggestions] = useState(null);
   const [conflictCount, setConflictCount] = useState(0);
   const [conflicts, setConflicts] = useState([]);
+  const [conflictsLoading, setConflictsLoading] = useState(false);
   const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
-  const [viewTab, setViewTab] = useState(0); // 0=Section, 1=Faculty, 2=Room
+  const [viewTab, setViewTab] = useState(SECTION);
   const [config, setConfig] = useState(null);
 
-  // Assignment dialog
   const [assignOpen, setAssignOpen] = useState(false);
-  const [assignSlot, setAssignSlot] = useState({ day: '', hour: 0, suggestion: null });
+  const [assignSlot, setAssignSlot] = useState({ day: '', hour: 0 });
+  const [editOpen, setEditOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
 
-  const days = config?.operating_days || DEFAULT_DAYS;
-  const startHour = config ? parseInt(config.earliest_start_time?.split(':')[0], 10) : 7;
-  const endHour = config ? parseInt(config.latest_end_time?.split(':')[0], 10) : 21;
-  const hours = Array.from({ length: endHour - startHour }, (_, i) => i + startHour);
+  const days = config?.operating_days?.length ? config.operating_days : DEFAULT_DAYS;
+  const startHour = config ? parseInt(config.earliest_start_time?.split(':')[0], 10) || 7 : 7;
+  const endHour = config ? parseInt(config.latest_end_time?.split(':')[0], 10) || 21 : 21;
 
-  // Load periods
   useEffect(() => {
     fetchAcademicPeriods().then((res) => {
       const p = res.data.results ?? res.data;
@@ -48,89 +53,203 @@ export default function ScheduleBuilder() {
     });
   }, []);
 
-  // Load config + sections when period changes
   useEffect(() => {
     if (!activePeriod) return;
-    fetchSections({ academic_period: activePeriod }).then((res) => {
+    fetchSections({ academic_period: activePeriod, page_size: 1000 }).then((res) => {
       const s = res.data.results ?? res.data;
       setSections(s);
-      if (s.length > 0) setSelectedSection(s[0].id);
+      if (s.length > 0) setSelectedSection((prev) => prev || s[0].id);
     });
     fetchConfig({ academic_period: activePeriod }).then((res) => {
       const items = res.data.results ?? res.data;
       setConfig(Array.isArray(items) ? items[0] : items);
     }).catch(() => {});
-    fetchConflicts({ academic_period: activePeriod }).then((res) => {
-      const c = res.data.results ?? res.data;
-      const arr = Array.isArray(c) ? c : [];
-      setConflicts(arr);
-      setConflictCount(arr.length);
-    }).catch(() => {});
   }, [activePeriod]);
 
-  // Load courses + schedules
   useEffect(() => {
     if (!activePeriod) return;
-    fetchCourses().then((res) => setCourses(res.data.results ?? res.data));
+    fetchCourses({ page_size: 1000 }).then((res) => setCourses(res.data.results ?? res.data));
     reload();
-  }, [activePeriod, selectedSection]);
+  }, [activePeriod]);
 
-  const reload = () => {
-    const params = { academic_period: activePeriod };
-    if (selectedSection) params.sections = selectedSection;
-    fetchSchedules(params).then((res) => setSchedules(res.data.results ?? res.data));
-    // Refresh conflict count
+  const reload = async () => {
+    if (!activePeriod) return;
+    const all = [];
+    let page = 1;
+    for (;;) {
+      const res = await fetchSchedules({ academic_period: activePeriod, page, page_size: 1000 });
+      const data = res.data;
+      all.push(...(data.results ?? data));
+      if (data.next) page += 1; else break;
+    }
+    setSchedules(all);
+    setConflictsLoading(true);
     fetchConflicts({ academic_period: activePeriod }).then((res) => {
       const c = res.data.results ?? res.data;
-      const arr = Array.isArray(c) ? c : [];
+      const arr = (Array.isArray(c) ? c : []).filter((x) => (x.hard || []).length > 0);
       setConflicts(arr);
       setConflictCount(arr.length);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setConflictsLoading(false));
   };
 
-  // Get suggestions when course is selected
+  const sectionLabel = (sec) => `${sec.program_code || sec.program} ${sec.year_level}-${sec.section_number}`;
+
+  // selector option lists
+  const programList = useMemo(() => {
+    const set = new Set(sections.map((s) => s.program_code).filter(Boolean));
+    return [...set].sort();
+  }, [sections]);
+
+  const facultyList = useMemo(() => {
+    const m = new Map();
+    schedules.forEach((e) => { if (e.faculty && !m.has(e.faculty)) m.set(e.faculty, e.faculty_name || `Faculty ${e.faculty}`); });
+    return [...m.entries()].map(([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [schedules]);
+
+  const roomsList = useMemo(() => {
+    const m = new Map();
+    schedules.forEach((e) => { if (e.room && !m.has(e.room)) m.set(e.room, e.room_name || `Room ${e.room}`); });
+    return [...m.entries()].map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  }, [schedules]);
+
+  const allSectionOptions = useMemo(
+    () => sections.map((s) => ({ id: s.id, label: sectionLabel(s) })), [sections]);
+  const programSectionOptions = useMemo(
+    () => sections.filter((s) => s.program_code === selectedProgram).map((s) => ({ id: s.id, label: sectionLabel(s) })),
+    [sections, selectedProgram]);
+
+  // Overloaded faculty (matches backend per-entry unit sum)
+  const OVERLOAD_MAX = 24;
+  const facultyUnits = useMemo(() => {
+    const cu = {};
+    courses.forEach((c) => { cu[c.id] = (Number(c.lec_units) || 0) + (Number(c.lab_units) || 0); });
+    const totals = {};
+    schedules.forEach((e) => { if (e.faculty != null) totals[e.faculty] = (totals[e.faculty] || 0) + (cu[e.course] || 0); });
+    return totals;
+  }, [schedules, courses]);
+  const overloadedFaculty = useMemo(() => {
+    const s = new Set();
+    Object.entries(facultyUnits).forEach(([id, total]) => { if (total > OVERLOAD_MAX) s.add(String(id)); });
+    return s;
+  }, [facultyUnits]);
+
+  const entriesById = useMemo(() => {
+    const m = {};
+    schedules.forEach((e) => { m[e.id] = e; });
+    return m;
+  }, [schedules]);
+
   useEffect(() => {
-    if (!selectedCourse || !activePeriod) {
-      setSuggestions(null);
-      return;
+    if (viewTab === PROGRAM && !selectedProgram && programList.length) setSelectedProgram(programList[0]);
+    if (viewTab === FACULTY && !selectedFaculty && facultyList.length) setSelectedFaculty(facultyList[0].id);
+    if (viewTab === ROOM && !selectedRoom && roomsList.length) setSelectedRoom(roomsList[0].id);
+  }, [viewTab, programList, facultyList, roomsList]); // eslint-disable-line
+
+  const visibleEntries = useMemo(() => {
+    if (viewTab === SECTION) {
+      if (selectedSection === ALL_SECTIONS) return schedules;
+      if (selectedSection) return schedules.filter((e) => (e.sections || []).map(String).includes(String(selectedSection)));
     }
-    suggestSlots({
-      course: selectedCourse.id,
-      section: selectedSection,
-      academic_period: activePeriod,
-    }).then((res) => {
-      setSuggestions(res.data.results ?? res.data ?? res.data);
-    }).catch(() => setSuggestions(null));
-  }, [selectedCourse, activePeriod, selectedSection]);
+    if (viewTab === PROGRAM && selectedProgram) {
+      const ids = new Set(sections.filter((s) => s.program_code === selectedProgram).map((s) => String(s.id)));
+      return schedules.filter((e) => (e.sections || []).some((id) => ids.has(String(id))));
+    }
+    if (viewTab === FACULTY && selectedFaculty) return schedules.filter((e) => String(e.faculty) === String(selectedFaculty));
+    if (viewTab === ROOM && selectedRoom) return schedules.filter((e) => String(e.room) === String(selectedRoom));
+    return [];
+  }, [schedules, sections, viewTab, selectedSection, selectedProgram, selectedFaculty, selectedRoom]);
 
-  const handleSlotClick = (day, hour, suggestion) => {
-    setAssignSlot({ day, hour, suggestion });
-    setAssignOpen(true);
+  const subtitleFor = (e) => {
+    if (viewTab === FACULTY) return [(e.section_names || []).join(', '), e.room_name].filter(Boolean).join(' · ');
+    if (viewTab === ROOM) return [(e.section_names || []).join(', '), e.faculty_name].filter(Boolean).join(' · ');
+    if (viewTab === PROGRAM || selectedSection === ALL_SECTIONS) {
+      return [(e.section_names || []).join(', '), e.room_name, e.faculty_name].filter(Boolean).join(' · ');
+    }
+    return [e.room_name, e.faculty_name].filter(Boolean).join(' · ');
   };
 
-  const sectionLabel = (sec) => {
-    return `${sec.program_code || sec.program} ${sec.year_level}-${sec.section_number}`;
+  const currentTitle = () => {
+    if (viewTab === PROGRAM) return selectedProgram ? `Program — ${selectedProgram}` : 'Select a program';
+    if (viewTab === FACULTY) {
+      const f = facultyList.find((x) => String(x.id) === String(selectedFaculty));
+      return f ? `Faculty — ${f.label}` : 'Select a faculty member';
+    }
+    if (viewTab === ROOM) {
+      const r = roomsList.find((x) => String(x.id) === String(selectedRoom));
+      return r ? `Room — ${r.label}` : 'Select a room';
+    }
+    if (selectedSection === ALL_SECTIONS) return 'Timetable — All sections';
+    const s = sections.find((x) => String(x.id) === String(selectedSection));
+    return s ? `Timetable — ${sectionLabel(s)}` : 'Select a section';
   };
+
+  // --- add / edit wiring ---
+  const canAdd = (viewTab === SECTION) || (viewTab === PROGRAM && programSectionOptions.length > 0);
+  let addSectionOptions = null;
+  let addDefaultSection;
+  let addPreset = null;
+  if (viewTab === SECTION) {
+    if (selectedSection === ALL_SECTIONS) addSectionOptions = allSectionOptions;
+    else { addDefaultSection = selectedSection; addPreset = selectedCourse; }
+  } else if (viewTab === PROGRAM) {
+    addSectionOptions = programSectionOptions;
+  }
+
+  const handleSlotClick = (day, hour) => { setAssignSlot({ day, hour }); setAssignOpen(true); };
+  const handleEntryClick = (entry) => { setEditEntry(entry); setEditOpen(true); };
+  const switchLens = (v) => { setViewTab(v); setSelectedCourse(null); };
 
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 120px)', gap: 2 }}>
-      {/* Left sidebar */}
+      {/* Sidebar */}
       <Box sx={{
         width: 260, flexShrink: 0, bgcolor: 'background.paper',
         borderRadius: 2, border: '1px solid', borderColor: 'divider',
         display: 'flex', flexDirection: 'column',
       }}>
         <Box sx={{ p: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <TextField select size="small" fullWidth label="Section" value={selectedSection}
-            onChange={(e) => { setSelectedSection(e.target.value); setSelectedCourse(null); }}
-            SelectProps={{ native: true }}>
-            {sections.map((s) => <option key={s.id} value={s.id}>{sectionLabel(s)}</option>)}
-          </TextField>
+          {viewTab === SECTION && (
+            <TextField select size="small" fullWidth label="Section" value={selectedSection}
+              onChange={(e) => { setSelectedSection(e.target.value); setSelectedCourse(null); }}
+              SelectProps={{ native: true }}>
+              <option value={ALL_SECTIONS}>All sections (everything)</option>
+              {sections.map((s) => <option key={s.id} value={s.id}>{sectionLabel(s)}</option>)}
+            </TextField>
+          )}
+          {viewTab === PROGRAM && (
+            <TextField select size="small" fullWidth label="Program" value={selectedProgram}
+              onChange={(e) => setSelectedProgram(e.target.value)} SelectProps={{ native: true }}>
+              {programList.map((p) => <option key={p} value={p}>{p}</option>)}
+            </TextField>
+          )}
+          {viewTab === FACULTY && (
+            <TextField select size="small" fullWidth label="Faculty" value={selectedFaculty}
+              onChange={(e) => setSelectedFaculty(e.target.value)} SelectProps={{ native: true }}>
+              {facultyList.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+            </TextField>
+          )}
+          {viewTab === ROOM && (
+            <TextField select size="small" fullWidth label="Room" value={selectedRoom}
+              onChange={(e) => setSelectedRoom(e.target.value)} SelectProps={{ native: true }}>
+              {roomsList.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+            </TextField>
+          )}
         </Box>
-        <CourseList
-          courses={courses} schedules={schedules}
-          selectedCourse={selectedCourse} onSelectCourse={setSelectedCourse}
-        />
+        {viewTab === SECTION ? (
+          <CourseList courses={courses} schedules={schedules}
+            selectedCourse={selectedCourse} onSelectCourse={setSelectedCourse} />
+        ) : (
+          <Box sx={{ p: 2 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+              {viewTab === PROGRAM ? 'Program schedule' : viewTab === FACULTY ? 'Faculty load' : 'Room usage'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {visibleEntries.length} class{visibleEntries.length === 1 ? '' : 'es'} this week.
+              {canAdd ? ' Click an empty slot to add; click a class to edit.' : ' Click a class to edit.'}
+            </Typography>
+          </Box>
+        )}
       </Box>
 
       {/* Center grid */}
@@ -141,64 +260,79 @@ export default function ScheduleBuilder() {
       }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="h6">
-              {selectedSection
-                ? `Timetable — ${sections.find((s) => String(s.id) === String(selectedSection))
-                    ? sectionLabel(sections.find((s) => String(s.id) === String(selectedSection)))
-                    : ''}`
-                : 'Select a section'}
-            </Typography>
-            {conflictCount > 0 && (
-              <Badge badgeContent={conflictCount} color="error"
-                sx={{ cursor: 'pointer' }}
+            <Typography variant="h6">{currentTitle()}</Typography>
+            {conflictsLoading && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <CircularProgress size={15} thickness={5} />
+                <Typography variant="caption" color="text.secondary">Checking conflicts…</Typography>
+              </Box>
+            )}
+            {!conflictsLoading && conflictCount > 0 && (
+              <Badge badgeContent={conflictCount} color="error" max={99999}
+                sx={{ cursor: 'pointer', '& .MuiBadge-badge': { fontSize: '0.65rem', height: 18, minWidth: 18 } }}
                 onClick={() => setConflictDrawerOpen(true)}>
                 <Warning color="error" />
               </Badge>
             )}
+            {viewTab === FACULTY && overloadedFaculty.has(String(selectedFaculty)) && (
+              <Chip size="small" color="error" icon={<Warning />}
+                label={`Overloaded · ${facultyUnits[selectedFaculty]} units (max ${OVERLOAD_MAX})`} />
+            )}
           </Box>
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-            <Tabs value={viewTab} onChange={(_, v) => setViewTab(v)} sx={{ minHeight: 36 }}>
+            <Tabs value={viewTab} onChange={(_, v) => switchLens(v)} sx={{ minHeight: 36 }}>
               <Tab label="Section" sx={{ minHeight: 36, py: 0 }} />
+              <Tab label="Program" sx={{ minHeight: 36, py: 0 }} />
               <Tab label="Faculty" sx={{ minHeight: 36, py: 0 }} />
               <Tab label="Room" sx={{ minHeight: 36, py: 0 }} />
             </Tabs>
             <TextField select size="small" value={activePeriod} sx={{ minWidth: 200 }}
-              onChange={(e) => setActivePeriod(e.target.value)}
-              SelectProps={{ native: true }}>
+              onChange={(e) => setActivePeriod(e.target.value)} SelectProps={{ native: true }}>
               {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </TextField>
           </Box>
         </Box>
 
-        {selectedCourse && (
+        {viewTab === SECTION && selectedCourse && selectedSection !== ALL_SECTIONS && (
           <Box sx={{ mb: 1, p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              Assigning: {selectedCourse.code} — {selectedCourse.title}
-              {selectedCourse.has_lab && ' (Lec + Lab)'}
+              Selected: {selectedCourse.code} — {selectedCourse.title}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Click a green slot on the grid to assign. Stars show top suggestions.
+              Click an empty slot to add it (pre-filled), or click any class to edit.
             </Typography>
           </Box>
         )}
 
         <TimetableGrid
-          schedules={schedules} days={days} hours={hours}
-          selectedCourse={selectedCourse} suggestions={suggestions}
+          entries={visibleEntries} days={days}
+          startHour={startHour} endHour={endHour}
+          subtitleFor={subtitleFor}
+          overloadedFaculty={overloadedFaculty}
+          canAdd={canAdd}
           onSlotClick={handleSlotClick}
+          onEntryClick={handleEntryClick}
         />
       </Box>
 
       <AssignmentDialog
         open={assignOpen} onClose={() => setAssignOpen(false)}
-        course={selectedCourse} section={selectedSection} periodId={activePeriod}
-        slotDay={assignSlot.day} slotHour={assignSlot.hour} suggestion={assignSlot.suggestion}
+        courses={courses} presetCourse={addPreset}
+        sectionOptions={addSectionOptions} defaultSection={addDefaultSection}
+        periodId={activePeriod}
+        slotDay={assignSlot.day} slotHour={assignSlot.hour}
         onSaved={() => { reload(); setSelectedCourse(null); }}
+      />
+
+      <EditDialog
+        open={editOpen} onClose={() => setEditOpen(false)}
+        entry={editEntry} onSaved={reload}
       />
 
       <ConflictDrawer
         open={conflictDrawerOpen} onClose={() => setConflictDrawerOpen(false)}
-        conflicts={conflicts}
+        conflicts={conflicts} loading={conflictsLoading} entriesById={entriesById}
+        periodId={activePeriod}
       />
     </Box>
   );

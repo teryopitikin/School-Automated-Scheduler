@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from .models import Faculty, Room, ScheduleConfig, ScheduleEntry
 
@@ -125,6 +126,105 @@ def export_faculty_loading(tenant, period):
             float(data['units'].get('PART_TIME', 0)),
             len(data['courses']), len(data['sections']),
         ])
+
+    return wb
+
+
+def export_conflicts(tenant, period):
+    """Full conflict report for presentation: one row per clash, with both the
+    class and the class it conflicts with. A second sheet lists overloaded
+    faculty (the accepted exemption)."""
+    from .conflicts import detect_conflicts
+
+    TYPE_LABELS = {
+        'faculty': 'Faculty double-booked',
+        'room': 'Room double-booked',
+        'section': 'Section overlap',
+    }
+
+    entries = ScheduleEntry.objects.filter(
+        tenant=tenant, academic_period=period,
+    ).select_related('course', 'faculty', 'room').prefetch_related(
+        'sections', 'sections__program',
+    ).order_by('day_of_week', 'time_start')
+    by_id = {e.pk: e for e in entries}
+
+    def program_of(e):
+        secs = list(e.sections.all())
+        return secs[0].program.code if secs else ''
+
+    def sections_of(e):
+        return ', '.join(str(s) for s in e.sections.all())
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Conflicts'
+
+    headers = [
+        'Class Code', 'Class Title', 'Program', 'Section(s)', 'Day',
+        'Time Start', 'Time End', 'Room', 'Faculty', 'Load', 'Conflict Type',
+        'Clashes With — Code', 'Clashes With — Title', 'Clashes With — Section(s)',
+        'Clashes With — Day', 'Clashes With — Time', 'Clashes With — Room',
+        'Clashes With — Faculty', 'Details',
+    ]
+    ws.append(headers)
+    header_fill = PatternFill(start_color='C0392B', end_color='C0392B', fill_type='solid')
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+
+    rows = 0
+    for e in entries:
+        result = detect_conflicts(e)
+        for h in result['hard']:
+            other = by_id.get(h.get('conflicting_entry_id'))
+            ws.append([
+                e.course.code, e.course.title, program_of(e), sections_of(e),
+                e.day_of_week, _format_time(e.time_start), _format_time(e.time_end),
+                e.room.name if e.room else '', e.faculty.name if e.faculty else 'TBA',
+                e.load_classification.replace('_', '-').title(),
+                TYPE_LABELS.get(h['type'], h['type']),
+                other.course.code if other else '',
+                other.course.title if other else '',
+                sections_of(other) if other else '',
+                other.day_of_week if other else '',
+                f'{_format_time(other.time_start)}-{_format_time(other.time_end)}' if other else '',
+                other.room.name if other and other.room else '',
+                other.faculty.name if other and other.faculty else '',
+                h.get('message', ''),
+            ])
+            rows += 1
+
+    if rows == 0:
+        ws.append(['No conflicts found.'])
+
+    widths = [14, 30, 9, 18, 6, 11, 11, 14, 22, 10, 20, 14, 30, 18, 8, 22, 14, 22, 44]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+
+    # --- Sheet 2: overloaded faculty (exemption) ---
+    ws2 = wb.create_sheet('Faculty Overload')
+    ws2.append(['Faculty', 'Assigned Units', 'Max Load', 'Over By'])
+    for cell in ws2[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = PatternFill(start_color='E67E22', end_color='E67E22', fill_type='solid')
+
+    totals = defaultdict(Decimal)
+    fac_max = {}
+    for e in entries:
+        if e.faculty_id:
+            totals[e.faculty.name] += (e.course.lec_units + e.course.lab_units)
+            fac_max[e.faculty.name] = e.faculty.max_load_units
+    over = [(n, u) for n, u in totals.items() if u > fac_max.get(n, Decimal('24'))]
+    for name, units in sorted(over, key=lambda x: x[1], reverse=True):
+        mx = fac_max.get(name, Decimal('24'))
+        ws2.append([name, float(units), float(mx), float(units - mx)])
+    if not over:
+        ws2.append(['No overloaded faculty.'])
+    for i, w in enumerate([30, 16, 12, 10], 1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+    ws2.freeze_panes = 'A2'
 
     return wb
 

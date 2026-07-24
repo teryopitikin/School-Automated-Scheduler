@@ -36,12 +36,12 @@ def period(tenant):
 
 class TestAcademicPeriodAPI:
     def test_list(self, auth_client, period):
-        response = auth_client.get('/api/loader/academic-periods/')
+        response = auth_client.get('/api/scheduler/academic-periods/')
         assert response.status_code == 200
         assert response.data['count'] == 1
 
     def test_create(self, auth_client):
-        response = auth_client.post('/api/loader/academic-periods/', {
+        response = auth_client.post('/api/scheduler/academic-periods/', {
             'name': '2S 25-26',
             'year_start': 2025,
             'year_end': 2026,
@@ -57,40 +57,40 @@ class TestAcademicPeriodAPI:
             tenant=other_tenant, name='Other Period', year_start=2025,
             year_end=2026, semester='2ND', status='DRAFT',
         )
-        response = auth_client.get('/api/loader/academic-periods/')
+        response = auth_client.get('/api/scheduler/academic-periods/')
         assert response.data['count'] == 1
 
 
 class TestProgramAPI:
     def test_crud(self, auth_client):
-        response = auth_client.post('/api/loader/programs/', {'code': 'BSA', 'name': 'BS Agriculture'})
+        response = auth_client.post('/api/scheduler/programs/', {'code': 'BSA', 'name': 'BS Agriculture'})
         assert response.status_code == 201
         pk = response.data['id']
 
-        response = auth_client.get(f'/api/loader/programs/{pk}/')
+        response = auth_client.get(f'/api/scheduler/programs/{pk}/')
         assert response.data['code'] == 'BSA'
 
-        response = auth_client.patch(f'/api/loader/programs/{pk}/', {'name': 'BS Agri'})
+        response = auth_client.patch(f'/api/scheduler/programs/{pk}/', {'name': 'BS Agri'})
         assert response.status_code == 200
         assert response.data['name'] == 'BS Agri'
 
-        response = auth_client.delete(f'/api/loader/programs/{pk}/')
+        response = auth_client.delete(f'/api/scheduler/programs/{pk}/')
         assert response.status_code == 204
 
 
 class TestDepartmentAPI:
     def test_list_and_create(self, auth_client):
-        response = auth_client.post('/api/loader/departments/', {'code': 'Agri', 'name': 'Agriculture'})
+        response = auth_client.post('/api/scheduler/departments/', {'code': 'Agri', 'name': 'Agriculture'})
         assert response.status_code == 201
 
-        response = auth_client.get('/api/loader/departments/')
+        response = auth_client.get('/api/scheduler/departments/')
         assert response.data['count'] == 1
 
 
 class TestCourseAPI:
     def test_create_with_department(self, auth_client, tenant):
         dept = Department.objects.create(tenant=tenant, code='Agri', name='Agriculture')
-        response = auth_client.post('/api/loader/courses/', {
+        response = auth_client.post('/api/scheduler/courses/', {
             'department': dept.pk,
             'code': 'CrSc 1',
             'title': 'Crop Science 1',
@@ -106,7 +106,7 @@ class TestCourseAPI:
 class TestSectionAPI:
     def test_create(self, auth_client, tenant, period):
         prog = Program.objects.create(tenant=tenant, code='BSA', name='BSA')
-        response = auth_client.post('/api/loader/sections/', {
+        response = auth_client.post('/api/scheduler/sections/', {
             'program': prog.pk,
             'academic_period': period.pk,
             'year_level': 1,

@@ -12,3 +12,4 @@ frontend/dist/
 venv/
 *.log
 .DS_Store
+.superpowers/

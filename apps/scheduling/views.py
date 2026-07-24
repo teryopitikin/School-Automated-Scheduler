@@ -189,28 +189,158 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
         serializer.save(tenant=tenant)
 
     def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        entry = serializer.instance
-        conflicts = detect_conflicts(entry)
-        data = serializer.data
-        data['conflicts'] = conflicts
-        if conflicts['hard']:
-            data['conflict_warning'] = 'This entry has hard conflicts — consider resolving them.'
-        return Response(data, status=status.HTTP_201_CREATED)
+        """Create schedule entries for one or more days.
+
+        A HARD conflict (same day + overlapping time on the same room, faculty,
+        or section) blocks the add — nothing is saved. A soft warning such as
+        faculty overload does NOT block; the class is still added. Pass
+        ``allow_conflicts: true`` to force-save past a hard conflict.
+        """
+        import uuid
+        from django.db import transaction
+
+        data = request.data
+        days = data.get('days')
+        if not days:
+            single = data.get('day_of_week')
+            days = [single] if single else []
+        if isinstance(days, str):
+            days = [days]
+        if not days:
+            return Response({'detail': 'At least one day is required.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        allow_conflicts = str(data.get('allow_conflicts', '')).lower() in ('1', 'true', 'yes')
+        group = uuid.uuid4()
+
+        common = {
+            'academic_period': data.get('academic_period'),
+            'course': data.get('course'),
+            'faculty': data.get('faculty') or None,
+            'room': data.get('room'),
+            'time_start': data.get('time_start'),
+            'time_end': data.get('time_end'),
+            'entry_type': data.get('entry_type', 'LECTURE'),
+            'load_classification': data.get('load_classification', 'REGULAR'),
+            'class_size': data.get('class_size', 0),
+            'faculty_credits': data.get('faculty_credits', 0),
+            'remarks': data.get('remarks', ''),
+            'sections': data.get('sections', []),
+        }
+
+        created, hard, warnings = [], [], []
+        with transaction.atomic():
+            for day in days:
+                serializer = self.get_serializer(data={**common, 'day_of_week': day})
+                serializer.is_valid(raise_exception=True)
+                serializer.save(tenant=tenant, group_id=group)
+                created.append(serializer.instance)
+            for entry in created:
+                result = detect_conflicts(entry)
+                hard.extend(result['hard'])
+                warnings.extend(result['warnings'])
+            if hard and not allow_conflicts:
+                transaction.set_rollback(True)
+
+        if hard and not allow_conflicts:
+            return Response({
+                'detail': 'Not added — this class clashes with an existing schedule '
+                          '(same time on the same room, faculty, or section).',
+                'blocked': True,
+                'hard': hard,
+                'warnings': warnings,
+            }, status=status.HTTP_409_CONFLICT)
+
+        return Response({
+            'created': len(created),
+            'group_id': str(group),
+            'warnings': warnings,
+            'entries': [self.get_serializer(e).data for e in created],
+        }, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
+        """Edit a single day-slot. Same rule as create: a hard clash blocks the
+        save (unless allow_conflicts) — overload does not."""
+        from django.db import transaction
+
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        entry = serializer.instance
-        conflicts = detect_conflicts(entry)
+        allow = str(request.data.get('allow_conflicts', '')).lower() in ('1', 'true', 'yes')
+
+        with transaction.atomic():
+            self.perform_update(serializer)
+            entry = serializer.instance
+            conflicts = detect_conflicts(entry)
+            if conflicts['hard'] and not allow:
+                transaction.set_rollback(True)
+
+        if conflicts['hard'] and not allow:
+            return Response({
+                'detail': 'Not saved — this class clashes with an existing schedule.',
+                'blocked': True, 'hard': conflicts['hard'],
+            }, status=status.HTTP_409_CONFLICT)
+
         data = serializer.data
         data['conflicts'] = conflicts
         return Response(data)
+
+    @action(detail=True, methods=['post'], url_path='edit-group')
+    def edit_group(self, request, pk=None):
+        """Apply faculty/room/time/load changes to EVERY day of this class
+        (all entries sharing its group_id). Day stays per-slot."""
+        from datetime import datetime
+        from django.db import transaction
+
+        entry = self.get_object()
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        allow = str(request.data.get('allow_conflicts', '')).lower() in ('1', 'true', 'yes')
+
+        def parse_t(v):
+            return datetime.strptime(str(v)[:5], '%H:%M').time()
+
+        updates = {}
+        if 'faculty' in request.data:
+            updates['faculty_id'] = request.data['faculty'] or None
+        if 'room' in request.data:
+            updates['room_id'] = request.data['room'] or None
+        if 'time_start' in request.data and request.data['time_start']:
+            updates['time_start'] = parse_t(request.data['time_start'])
+        if 'time_end' in request.data and request.data['time_end']:
+            updates['time_end'] = parse_t(request.data['time_end'])
+        if 'load_classification' in request.data:
+            updates['load_classification'] = request.data['load_classification']
+
+        targets = list(ScheduleEntry.objects.filter(tenant=tenant, group_id=entry.group_id))
+        hard = []
+        with transaction.atomic():
+            for t in targets:
+                for k, v in updates.items():
+                    setattr(t, k, v)
+                t.save()
+            for t in targets:
+                hard.extend(detect_conflicts(t)['hard'])
+            if hard and not allow:
+                transaction.set_rollback(True)
+
+        if hard and not allow:
+            return Response({
+                'detail': 'Not saved — a day of this class clashes with an existing schedule.',
+                'blocked': True, 'hard': hard,
+            }, status=status.HTTP_409_CONFLICT)
+        return Response({'updated': len(targets)})
+
+    @action(detail=True, methods=['post'], url_path='delete-group')
+    def delete_group(self, request, pk=None):
+        """Delete every day of this class (all entries sharing its group_id)."""
+        entry = self.get_object()
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        qs = ScheduleEntry.objects.filter(tenant=tenant, group_id=entry.group_id)
+        count = qs.count()
+        qs.delete()
+        return Response({'deleted': count}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get'])
     def conflicts(self, request):
@@ -339,7 +469,10 @@ def import_excel_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def export_excel_view(request):
-    from .exporters import export_schedule, export_faculty_loading, export_room_utilization
+    from .exporters import (
+        export_schedule, export_faculty_loading, export_room_utilization,
+        export_conflicts,
+    )
 
     period_id = request.query_params.get('academic_period')
     export_type = request.query_params.get('type', 'schedule')
@@ -358,6 +491,7 @@ def export_excel_view(request):
         'schedule': export_schedule,
         'faculty_loading': export_faculty_loading,
         'room_utilization': export_room_utilization,
+        'conflicts': export_conflicts,
     }
 
     func = export_funcs.get(export_type)

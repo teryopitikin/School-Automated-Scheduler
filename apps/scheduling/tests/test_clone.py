@@ -73,7 +73,7 @@ def setup_source(tenant, source_period):
 class TestPeriodClone:
     def test_clone_basic(self, auth_client, source_period, setup_source):
         response = auth_client.post(
-            f'/api/loader/academic-periods/{source_period.pk}/clone/',
+            f'/api/scheduler/academic-periods/{source_period.pk}/clone/',
             {
                 'name': '2S 25-26',
                 'year_start': 2025,
@@ -92,7 +92,7 @@ class TestPeriodClone:
 
     def test_clone_with_availability(self, auth_client, source_period, setup_source):
         response = auth_client.post(
-            f'/api/loader/academic-periods/{source_period.pk}/clone/',
+            f'/api/scheduler/academic-periods/{source_period.pk}/clone/',
             {
                 'name': '2S 25-26',
                 'year_start': 2025,
@@ -107,7 +107,7 @@ class TestPeriodClone:
 
     def test_clone_creates_new_period(self, auth_client, source_period, setup_source):
         auth_client.post(
-            f'/api/loader/academic-periods/{source_period.pk}/clone/',
+            f'/api/scheduler/academic-periods/{source_period.pk}/clone/',
             {
                 'name': '2S 25-26',
                 'year_start': 2025,
@@ -124,7 +124,7 @@ class TestPeriodClone:
 
     def test_clone_does_not_copy_schedule_entries(self, auth_client, source_period, setup_source, tenant):
         response = auth_client.post(
-            f'/api/loader/academic-periods/{source_period.pk}/clone/',
+            f'/api/scheduler/academic-periods/{source_period.pk}/clone/',
             {
                 'name': '2S 25-26',
                 'year_start': 2025,

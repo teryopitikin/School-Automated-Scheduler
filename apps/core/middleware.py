@@ -2,7 +2,7 @@ from django.http import JsonResponse
 
 from .models import Tenant
 
-PUBLIC_PREFIXES = ('/admin/', '/static/', '/api/loader/auth/')
+PUBLIC_PREFIXES = ('/admin/', '/static/', '/api/scheduler/auth/')
 
 
 class TenantMiddleware:

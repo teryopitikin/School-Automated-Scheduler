@@ -3,59 +3,47 @@ from django.db.models import Sum
 from .models import ScheduleEntry
 
 
-def _find_overlapping_entries(entry):
-    """Return entries in the same period/day that overlap in time, excluding self."""
+def _find_same_slot_entries(entry):
+    """Return entries in the exact same room, day, and time (a 100% slot match),
+    excluding self."""
+    if entry.room_id is None:
+        return ScheduleEntry.objects.none()
     return ScheduleEntry.objects.filter(
         tenant=entry.tenant,
         academic_period=entry.academic_period,
         day_of_week=entry.day_of_week,
-        time_start__lt=entry.time_end,
-        time_end__gt=entry.time_start,
-    ).exclude(pk=entry.pk).select_related('course', 'faculty', 'room').prefetch_related('sections')
+        time_start=entry.time_start,
+        time_end=entry.time_end,
+        room_id=entry.room_id,
+    ).exclude(pk=entry.pk).select_related('course', 'faculty', 'room')
 
 
 def detect_conflicts(entry):
     """
     Detect hard conflicts and warnings for a ScheduleEntry.
 
+    A conflict is a room double-booking: another class occupies the SAME room,
+    SAME day, and the EXACT SAME time (a 100% match on room + day + time).
+    Subject is not considered — any two classes sharing the exact same
+    room/day/time are flagged. Different rooms, different days, or times that
+    only partially overlap are NOT flagged.
+
     Returns:
         {
-            'hard': [{'type': 'room'|'faculty'|'section', 'message': str, 'conflicting_entry_id': int}, ...],
+            'hard': [{'type': 'room', 'message': str, 'conflicting_entry_id': int}, ...],
             'warnings': [{'type': str, 'message': str}, ...],
         }
     """
     hard = []
     warnings = []
 
-    overlapping = _find_overlapping_entries(entry)
-    entry_section_ids = set(entry.sections.values_list('pk', flat=True))
-
-    for other in overlapping:
-        # Room conflict
-        if other.room_id == entry.room_id:
-            hard.append({
-                'type': 'room',
-                'message': f'Room {entry.room} is already booked by {other.course.code} at {other.time_start}-{other.time_end}',
-                'conflicting_entry_id': other.pk,
-            })
-
-        # Faculty conflict
-        if entry.faculty_id and other.faculty_id == entry.faculty_id:
-            hard.append({
-                'type': 'faculty',
-                'message': f'{entry.faculty} is already teaching {other.course.code} at {other.time_start}-{other.time_end}',
-                'conflicting_entry_id': other.pk,
-            })
-
-        # Section conflict
-        other_section_ids = set(other.sections.values_list('pk', flat=True))
-        shared_sections = entry_section_ids & other_section_ids
-        if shared_sections:
-            hard.append({
-                'type': 'section',
-                'message': f'Section(s) already have {other.course.code} at {other.time_start}-{other.time_end}',
-                'conflicting_entry_id': other.pk,
-            })
+    for other in _find_same_slot_entries(entry):
+        # Same room + same day + exact same time = conflict, whatever the subject.
+        hard.append({
+            'type': 'room',
+            'message': f'Room {entry.room} is already booked by {other.course.code} at {other.time_start}-{other.time_end}',
+            'conflicting_entry_id': other.pk,
+        })
 
     # Warnings
     if entry.faculty_id:

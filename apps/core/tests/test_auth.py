@@ -16,7 +16,7 @@ class TestAuthEndpoints:
         )
 
     def test_login_success(self):
-        response = self.client.post('/api/loader/auth/login/', {
+        response = self.client.post('/api/scheduler/auth/login/', {
             'username': 'registrar',
             'password': 'testpass123',
         })
@@ -25,7 +25,7 @@ class TestAuthEndpoints:
         assert response.data['role'] == 'REGISTRAR'
 
     def test_login_bad_credentials(self):
-        response = self.client.post('/api/loader/auth/login/', {
+        response = self.client.post('/api/scheduler/auth/login/', {
             'username': 'registrar',
             'password': 'wrong',
         })
@@ -33,16 +33,16 @@ class TestAuthEndpoints:
 
     def test_current_user(self):
         self.client.force_authenticate(user=self.user)
-        response = self.client.get('/api/loader/auth/me/')
+        response = self.client.get('/api/scheduler/auth/me/')
         assert response.status_code == 200
         assert response.data['username'] == 'registrar'
         assert response.data['tenant_id'] == self.tenant.pk
 
     def test_logout(self):
         self.client.force_authenticate(user=self.user)
-        response = self.client.post('/api/loader/auth/logout/')
+        response = self.client.post('/api/scheduler/auth/logout/')
         assert response.status_code == 200
 
     def test_csrf_endpoint(self):
-        response = self.client.get('/api/loader/auth/csrf/')
+        response = self.client.get('/api/scheduler/auth/csrf/')
         assert response.status_code == 200

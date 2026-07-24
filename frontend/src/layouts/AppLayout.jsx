@@ -61,7 +61,7 @@ export default function AppLayout() {
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box sx={{ p: 2.5, pb: 1.5 }}>
         <Typography variant="h6" sx={{ color: '#fff', fontWeight: 700 }}>
-          Automated Loader
+          School Automated Scheduler
         </Typography>
         <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>
           Schedule Management

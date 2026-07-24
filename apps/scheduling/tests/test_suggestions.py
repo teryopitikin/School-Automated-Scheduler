@@ -249,7 +249,7 @@ class TestPairedSuggestions:
 
 class TestSuggestAPI:
     def test_suggest_endpoint(self, auth_client, tenant, period, config, course, section, faculty, room):
-        response = auth_client.post('/api/loader/schedules/suggest/', {
+        response = auth_client.post('/api/scheduler/schedules/suggest/', {
             'course': course.pk,
             'sections': [section.pk],
             'faculty': faculty.pk,
@@ -261,7 +261,7 @@ class TestSuggestAPI:
         assert 'suggestions' in response.data
 
     def test_suggest_no_faculty(self, auth_client, tenant, period, config, course, section, room):
-        response = auth_client.post('/api/loader/schedules/suggest/', {
+        response = auth_client.post('/api/scheduler/schedules/suggest/', {
             'course': course.pk,
             'sections': [section.pk],
             'academic_period': period.pk,
@@ -272,7 +272,7 @@ class TestSuggestAPI:
         assert 'suggestions' in response.data
 
     def test_suggest_lab_course(self, auth_client, tenant, period, config, lab_course, section, faculty, room, lab_room):
-        response = auth_client.post('/api/loader/schedules/suggest/', {
+        response = auth_client.post('/api/scheduler/schedules/suggest/', {
             'course': lab_course.pk,
             'sections': [section.pk],
             'faculty': faculty.pk,

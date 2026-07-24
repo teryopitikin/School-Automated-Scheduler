@@ -32,7 +32,7 @@ export default function Login() {
     }}>
       <Card sx={{ width: 400 }}>
         <CardContent sx={{ p: 4 }}>
-          <Typography variant="h5" sx={{ mb: 1 }}>Automated Loader</Typography>
+          <Typography variant="h5" sx={{ mb: 1 }}>School Automated Scheduler</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Sign in to manage schedules
           </Typography>

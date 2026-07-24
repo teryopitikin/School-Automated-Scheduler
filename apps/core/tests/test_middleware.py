@@ -29,7 +29,7 @@ class TestTenantMiddleware:
         assert response.status_code == 200
 
     def test_authenticated_user_sets_tenant(self):
-        request = self.factory.get('/api/loader/courses/')
+        request = self.factory.get('/api/scheduler/courses/')
         request.user = self.user
         response = self.middleware(request)
         assert request.tenant == self.tenant
@@ -38,7 +38,7 @@ class TestTenantMiddleware:
     def test_suspended_tenant_returns_403(self):
         self.tenant.status = 'SUSPENDED'
         self.tenant.save()
-        request = self.factory.get('/api/loader/courses/')
+        request = self.factory.get('/api/scheduler/courses/')
         request.user = self.user
         request.META['HTTP_HOST'] = 'uni.localhost'
         response = self.middleware(request)
