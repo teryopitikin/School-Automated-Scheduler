@@ -3,21 +3,27 @@ Django settings for AutomatedLoader project.
 """
 import os
 from pathlib import Path
-
 import environ
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# django-environ
+# Initialize django-environ
 env = environ.Env(
     DEBUG=(bool, False),
     ALLOWED_HOSTS=(list, ['localhost', '127.0.0.1']),
     CORS_ALLOWED_ORIGINS=(list, ['http://localhost:5173', 'http://127.0.0.1:5173']),
 )
 
-# Read .env file
-environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
+# Read .env file safely (checks BASE_DIR and fallback paths)
+env_file = BASE_DIR / '.env'
+if env_file.exists():
+    environ.Env.read_env(str(env_file))
+else:
+    # Optional fallback if .env is in the parent directory
+    parent_env = BASE_DIR.parent / '.env'
+    if parent_env.exists():
+        environ.Env.read_env(str(parent_env))
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
@@ -35,11 +41,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    
     # Third-party
     'rest_framework',
     'corsheaders',
     'django_filters',
-    # Local
+    
+    # Local Apps
     'apps.core',
     'apps.scheduling',
 ]
@@ -47,7 +55,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # Must be above CommonMiddleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -61,7 +69,7 @@ ROOT_URLCONF = 'scheduler.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -77,8 +85,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'scheduler.wsgi.application'
 
 # Database
+# Supports PostgreSQL, MySQL, SQLite via DATABASE_URL
 DATABASES = {
-    'default': env.db('DATABASE_URL', default='sqlite:///db.sqlite3'),
+    'default': env.db('DATABASE_URL', default=f'sqlite:///{BASE_DIR / "db.sqlite3"}')
 }
 
 # Password validation
@@ -99,18 +108,18 @@ USE_I18N = True
 USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS
+# CORS Settings
 CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
 CORS_ALLOW_CREDENTIALS = True
 
-# CSRF
-CSRF_TRUSTED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
+# CSRF Settings
+CSRF_TRUSTED_ORIGINS = env('CSRF_TRUSTED_ORIGINS', default=CORS_ALLOWED_ORIGINS)
 
 # Django REST Framework
 REST_FRAMEWORK = {
