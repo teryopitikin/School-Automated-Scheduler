@@ -24,6 +24,8 @@ MANUAL_SEMESTER = {230: 'First Semester 2026-2027'}  # was a stray '4'
 MANUAL_ROOM = {298: 'Asynchronous'}                  # was blank
 # Replace the raw Time Schedule text for rows with a data-entry error.
 MANUAL_SCHEDULE = {260: 'MWF 03:00 PM - 04:00 PM'}   # CRIM 5 (3D-WHORL) source typo: was 03:00 AM
+# Subject Code cell errors (copy-paste slips in the source sheet).
+MANUAL_SUBJECT = {265: 'LEA 2'}   # cell literally contained '08:00 AM - 09:00 AM'
 
 # ---------------------------------------------------------------- days
 DAY_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
@@ -302,7 +304,7 @@ for idx, r in enumerate(rows, start=2):
     if r[0] in (None, ''):
         continue
     n_rows_in += 1
-    base = [r[0], r[1], r[2], MANUAL_SEMESTER.get(idx, r[3])]
+    base = [MANUAL_SUBJECT.get(idx, r[0]), r[1], r[2], MANUAL_SEMESTER.get(idx, r[3])]
     faculty = r[6] if (r[6] is not None and str(r[6]).strip() != '') else 'TBA'
     room = MANUAL_ROOM.get(idx, r[5])
     if room is not None:
