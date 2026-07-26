@@ -8,10 +8,11 @@ import {
   Dashboard as DashboardIcon,
   CalendarMonth, School, Business, MenuBook, Person,
   MeetingRoom, Settings, Assessment, UploadFile,
-  Menu as MenuIcon, Logout, EventNote,
+  Menu as MenuIcon, Logout, EventNote, DarkMode, LightMode,
 } from '@mui/icons-material';
 import { logout } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
+import { useColorMode } from '../context/ColorModeContext';
 
 const DRAWER_WIDTH = 264;
 
@@ -46,6 +47,7 @@ const menuSections = [
 
 export default function AppLayout() {
   const { user, setUser } = useAuth();
+  const { mode, toggle: toggleColorMode } = useColorMode();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -136,6 +138,10 @@ export default function AppLayout() {
               <MenuIcon />
             </IconButton>
             <Box sx={{ flex: 1 }} />
+            <IconButton onClick={toggleColorMode} sx={{ mr: 0.5 }}
+              title={mode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}>
+              {mode === 'light' ? <DarkMode /> : <LightMode />}
+            </IconButton>
             <IconButton onClick={(e) => setAnchorEl(e.currentTarget)}>
               <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: '0.85rem' }}>
                 {user?.username?.[0]?.toUpperCase() || 'U'}

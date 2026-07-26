@@ -1,5 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Box, TextField, Typography, Tabs, Tab, Badge, Chip, CircularProgress } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
+import {
+  Box, TextField, Typography, Tabs, Tab, Badge, Chip, CircularProgress,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, Alert,
+} from '@mui/material';
 import { Warning } from '@mui/icons-material';
 import CourseList from './CourseList';
 import TimetableGrid from './TimetableGrid';
@@ -7,7 +11,7 @@ import AssignmentDialog from './AssignmentDialog';
 import EditDialog from './EditDialog';
 import ConflictDrawer from './ConflictDrawer';
 import { fetchCourses } from '../../api/courses';
-import { fetchSchedules, fetchConflicts } from '../../api/schedules';
+import { fetchSchedules, fetchSchedule, fetchConflicts, patchSchedule } from '../../api/schedules';
 import { fetchSections } from '../../api/sections';
 import { fetchAcademicPeriods } from '../../api/academicPeriods';
 import { fetchConfig } from '../../api/config';
@@ -39,6 +43,15 @@ export default function ScheduleBuilder() {
   const [assignSlot, setAssignSlot] = useState({ day: '', hour: 0 });
   const [editOpen, setEditOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
+  const [moveBlock, setMoveBlock] = useState(null);   // blocked drag-move + its clashes
+  const [moving, setMoving] = useState(false);
+
+  // Deep link from the dashboard's Room Capacity card: /schedule?room=<id>
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const roomParam = searchParams.get('room');
+    if (roomParam) { setViewTab(ROOM); setSelectedRoom(roomParam); }
+  }, [searchParams]);
 
   const days = config?.operating_days?.length ? config.operating_days : DEFAULT_DAYS;
   const startHour = config ? parseInt(config.earliest_start_time?.split(':')[0], 10) || 7 : 7;
@@ -177,7 +190,7 @@ export default function ScheduleBuilder() {
     }
     if (viewTab === ROOM) {
       const r = roomsList.find((x) => String(x.id) === String(selectedRoom));
-      return r ? `Room — ${r.label}` : 'Select a room';
+      return r ? (/^room/i.test(r.label) ? r.label : `Room — ${r.label}`) : 'Select a room';
     }
     if (selectedSection === ALL_SECTIONS) return 'Timetable — All sections';
     const s = sections.find((x) => String(x.id) === String(selectedSection));
@@ -185,7 +198,9 @@ export default function ScheduleBuilder() {
   };
 
   // --- add / edit wiring ---
-  const canAdd = (viewTab === SECTION) || (viewTab === PROGRAM && programSectionOptions.length > 0);
+  const canAdd = (viewTab === SECTION)
+    || (viewTab === PROGRAM && programSectionOptions.length > 0)
+    || (viewTab === ROOM && !!selectedRoom);
   let addSectionOptions = null;
   let addDefaultSection;
   let addPreset = null;
@@ -194,10 +209,54 @@ export default function ScheduleBuilder() {
     else { addDefaultSection = selectedSection; addPreset = selectedCourse; }
   } else if (viewTab === PROGRAM) {
     addSectionOptions = programSectionOptions;
+  } else if (viewTab === ROOM) {
+    addSectionOptions = allSectionOptions;   // any section can book the room
   }
 
   const handleSlotClick = (day, hour) => { setAssignSlot({ day, hour }); setAssignOpen(true); };
   const handleEntryClick = (entry) => { setEditEntry(entry); setEditOpen(true); };
+
+  // Open the edit dialog for any entry by id (used from the conflict drawer,
+  // where the clashing entry may not be loaded in the current view).
+  const handleEditById = async (id) => {
+    const local = schedules.find((e) => e.id === id);
+    if (local) { setEditEntry(local); setEditOpen(true); return; }
+    try {
+      const res = await fetchSchedule(id);
+      setEditEntry(res.data); setEditOpen(true);
+    } catch { /* entry may have been deleted meanwhile */ }
+  };
+
+  // --- drag-and-drop move ---
+  const toHms = (mins) =>
+    `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}:00`;
+  const prettyClash = (msg) => String(msg || '').replace(
+    /(\d{1,2}):(\d{2}):(\d{2})/g,
+    (_, h, m) => { const hh = parseInt(h, 10); return `${hh % 12 || 12}:${m} ${hh >= 12 ? 'PM' : 'AM'}`; },
+  );
+
+  const handleEntryMove = async (entry, day, startMin, endMin, allow = false) => {
+    setMoving(true);
+    try {
+      await patchSchedule(entry.id, {
+        day_of_week: day,
+        time_start: toHms(startMin),
+        time_end: toHms(endMin),
+        allow_conflicts: allow,
+      });
+      setMoveBlock(null);
+      reload();
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setMoveBlock({
+          entry, day, start: startMin, end: endMin,
+          hard: err.response.data.hard || [],
+        });
+      }
+    } finally {
+      setMoving(false);
+    }
+  };
   const switchLens = (v) => { setViewTab(v); setSelectedCourse(null); };
 
   return (
@@ -312,13 +371,41 @@ export default function ScheduleBuilder() {
           canAdd={canAdd}
           onSlotClick={handleSlotClick}
           onEntryClick={handleEntryClick}
+          onEntryMove={handleEntryMove}
         />
       </Box>
+
+      {/* Drag-move blocked by a clash — show it and offer the override */}
+      <Dialog open={!!moveBlock} onClose={() => setMoveBlock(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Can&apos;t move here — schedule clash</DialogTitle>
+        <DialogContent>
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            Moving <strong>{moveBlock?.entry?.course_code}</strong> to this slot clashes with:
+          </Alert>
+          <Box component="ul" sx={{ pl: 2.5, m: 0 }}>
+            {(moveBlock?.hard || []).map((h, i) => (
+              <li key={i} style={{ fontSize: '0.85rem', marginBottom: 4 }}>
+                {prettyClash(h.message)}
+              </li>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMoveBlock(null)}>Cancel</Button>
+          <Button color="warning" disabled={moving}
+            onClick={() => handleEntryMove(
+              moveBlock.entry, moveBlock.day, moveBlock.start, moveBlock.end, true,
+            )}>
+            Move anyway
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <AssignmentDialog
         open={assignOpen} onClose={() => setAssignOpen(false)}
         courses={courses} presetCourse={addPreset}
         sectionOptions={addSectionOptions} defaultSection={addDefaultSection}
+        presetRoom={viewTab === ROOM ? selectedRoom : null}
         periodId={activePeriod}
         slotDay={assignSlot.day} slotHour={assignSlot.hour}
         onSaved={() => { reload(); setSelectedCourse(null); }}
@@ -330,6 +417,7 @@ export default function ScheduleBuilder() {
       />
 
       <ConflictDrawer
+        onEditEntry={handleEditById}
         open={conflictDrawerOpen} onClose={() => setConflictDrawerOpen(false)}
         conflicts={conflicts} loading={conflictsLoading} entriesById={entriesById}
         periodId={activePeriod}

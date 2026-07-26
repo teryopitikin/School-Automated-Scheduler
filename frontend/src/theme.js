@@ -1,10 +1,14 @@
 import { createTheme } from '@mui/material/styles';
 
-const theme = createTheme({
+export const getTheme = (mode = 'light') => {
+  const dark = mode === 'dark';
+  const border = dark ? '#334155' : '#e2e8f0';
+  return createTheme({
   palette: {
+    mode,
     primary: {
       main: '#0d9488',
-      light: '#ccfbf1',
+      light: dark ? '#134e4a' : '#ccfbf1',
       dark: '#0f766e',
       contrastText: '#fff',
     },
@@ -17,14 +21,14 @@ const theme = createTheme({
     warning: { main: '#f59e0b', light: '#fcd34d', dark: '#d97706' },
     error: { main: '#ef4444', light: '#fca5a5', dark: '#dc2626' },
     background: {
-      default: '#f8fafc',
-      paper: '#ffffff',
+      default: dark ? '#0b1120' : '#f8fafc',
+      paper: dark ? '#151e31' : '#ffffff',
     },
     text: {
-      primary: '#1e293b',
-      secondary: '#64748b',
+      primary: dark ? '#e2e8f0' : '#1e293b',
+      secondary: dark ? '#94a3b8' : '#64748b',
     },
-    divider: '#e2e8f0',
+    divider: border,
   },
   shape: { borderRadius: 10 },
   typography: {
@@ -44,7 +48,7 @@ const theme = createTheme({
       styleOverrides: {
         root: {
           borderRadius: 10,
-          border: '1px solid #e2e8f0',
+          border: `1px solid ${border}`,
           boxShadow: '0 1px 2px 0 rgba(0,0,0,0.03)',
         },
       },
@@ -68,7 +72,7 @@ const theme = createTheme({
           border: 'none',
           fontSize: '0.84rem',
           '& .MuiDataGrid-columnHeaders': {
-            backgroundColor: '#f8fafc',
+            backgroundColor: dark ? '#1e293b' : '#f8fafc',
           },
         },
       },
@@ -82,6 +86,7 @@ const theme = createTheme({
       },
     },
   },
-});
+  });
+};
 
-export default theme;
+export default getTheme('light');

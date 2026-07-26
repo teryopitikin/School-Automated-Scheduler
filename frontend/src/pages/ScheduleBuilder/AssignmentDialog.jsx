@@ -22,7 +22,7 @@ const prettyConflict = (msg) => String(msg || '').replace(
 
 export default function AssignmentDialog({
   open, onClose, courses = [], presetCourse, sectionOptions, defaultSection,
-  periodId, slotDay, slotHour, onSaved,
+  presetRoom, periodId, slotDay, slotHour, onSaved,
 }) {
   const [faculty, setFaculty] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -53,11 +53,11 @@ export default function AssignmentDialog({
       customDays: [slotDay],
       time_start: slotHour != null ? `${String(slotHour).padStart(2, '0')}:00` : '',
       time_end: slotHour != null ? `${String(slotHour + 1).padStart(2, '0')}:00` : '',
-      faculty: '', room: '',
+      faculty: '', room: presetRoom ? String(presetRoom) : '',
     }));
     setError('');
     setHardConflicts([]);
-  }, [open, slotDay, slotHour, presetCourse, defaultSection]); // eslint-disable-line
+  }, [open, slotDay, slotHour, presetCourse, defaultSection, presetRoom]); // eslint-disable-line
 
   const courseObj = courses.find((c) => String(c.id) === String(courseId));
   const hasLab = !!courseObj?.has_lab;
@@ -135,7 +135,7 @@ export default function AssignmentDialog({
         <Grid container spacing={2} sx={{ mt: 0.5 }}>
           <Grid size={sectionOptions ? 6 : 12}>
             <TextField fullWidth select label="Course" value={courseId}
-              onChange={(e) => setCourseId(e.target.value)} SelectProps={{ native: true }}>
+              onChange={(e) => setCourseId(e.target.value)} SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               <option value="">Select course</option>
               {courses.map((c) => <option key={c.id} value={c.id}>{c.code} — {c.title}</option>)}
             </TextField>
@@ -143,7 +143,7 @@ export default function AssignmentDialog({
           {sectionOptions && (
             <Grid size={6}>
               <TextField fullWidth select label="Section" value={sectionId}
-                onChange={(e) => setSectionId(e.target.value)} SelectProps={{ native: true }}>
+                onChange={(e) => setSectionId(e.target.value)} SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {sectionOptions.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
               </TextField>
             </Grid>
@@ -152,7 +152,7 @@ export default function AssignmentDialog({
           <Grid size={6}>
             <TextField fullWidth select label="Faculty" value={form.faculty}
               onChange={(e) => setForm({ ...form, faculty: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               <option value="">TBA</option>
               {faculty.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </TextField>
@@ -160,17 +160,24 @@ export default function AssignmentDialog({
           <Grid size={6}>
             <TextField fullWidth select label="Room" value={form.room}
               onChange={(e) => setForm({ ...form, room: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               <option value="">Select room</option>
-              {(hasLab ? rooms : lecRooms).map((r) => (
-                <option key={r.id} value={r.id}>{r.name} ({r.room_type})</option>
-              ))}
+              {(() => {
+                const base = hasLab ? rooms : lecRooms;
+                // keep a preset room selectable even if the type filter hides it
+                const opts = presetRoom && !base.some((r) => String(r.id) === String(presetRoom))
+                  ? [...base, ...rooms.filter((r) => String(r.id) === String(presetRoom))]
+                  : base;
+                return opts.map((r) => (
+                  <option key={r.id} value={r.id}>{r.name} ({r.room_type})</option>
+                ));
+              })()}
             </TextField>
           </Grid>
           <Grid size={4}>
             <TextField fullWidth select label="Day Pattern" value={form.dayPattern}
               onChange={(e) => setForm({ ...form, dayPattern: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               {DAY_PATTERNS.map((p) => <option key={p.label} value={p.label}>{p.label === 'Single' ? `Single (${slotDay})` : p.label}</option>)}
             </TextField>
           </Grid>
@@ -187,7 +194,7 @@ export default function AssignmentDialog({
           <Grid size={4}>
             <TextField fullWidth select label="Load Type" value={form.load_classification}
               onChange={(e) => setForm({ ...form, load_classification: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               {LOAD_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
             </TextField>
           </Grid>
@@ -208,7 +215,7 @@ export default function AssignmentDialog({
               <Grid size={4}>
                 <TextField fullWidth select label="Lab Room" value={form.lab_room}
                   onChange={(e) => setForm({ ...form, lab_room: e.target.value })}
-                  SelectProps={{ native: true }}>
+                  SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                   <option value="">Select lab</option>
                   {labRooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </TextField>

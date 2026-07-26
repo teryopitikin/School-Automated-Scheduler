@@ -1,6 +1,8 @@
-import { useMemo } from 'react';
-import { Box, Typography, Tooltip } from '@mui/material';
-import { Warning } from '@mui/icons-material';
+import { useMemo, useRef, useState } from 'react';
+import { Box, Typography, Tooltip, IconButton } from '@mui/material';
+import { Warning, Add, Remove } from '@mui/icons-material';
+
+const SNAP_MIN = 30;       // drag-and-drop snaps to half-hour boundaries
 
 const ENTRY_COLORS = [
   '#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6',
@@ -61,11 +63,59 @@ function layoutDay(entries) {
 
 export default function TimetableGrid({
   entries, days, startHour, endHour, subtitleFor, overloadedFaculty,
-  canAdd, onSlotClick, onEntryClick,
+  canAdd, onSlotClick, onEntryClick, onEntryMove,
 }) {
+  // Zoom via the +/- controls (bottom-right). 100%-300% vertical scale.
+  const [zoom, setZoom] = useState(1);
+  const scrollRef = useRef(null);
+
+  const hourPx = HOUR_PX * zoom;
   const dayStartMin = startHour * 60;
-  const bodyHeight = (endHour - startHour) * HOUR_PX;
-  const pxPerMin = HOUR_PX / 60;
+  const bodyHeight = (endHour - startHour) * hourPx;
+  const pxPerMin = hourPx / 60;
+
+  // --- drag-and-drop ---
+  const dragRef = useRef(null);                 // { entry, duration, grabOffsetMin }
+  const [dropHint, setDropHint] = useState(null); // { day, start, end } preview
+
+  const dropStartFor = (evt) => {
+    const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
+    const drag = dragRef.current;
+    const raw = dayStartMin + y / pxPerMin - (drag?.grabOffsetMin || 0);
+    const snapped = Math.round(raw / SNAP_MIN) * SNAP_MIN;
+    const latest = endHour * 60 - (drag?.duration || SNAP_MIN);
+    return Math.min(Math.max(snapped, dayStartMin), latest);
+  };
+
+  const handleDragStart = (e, evt) => {
+    const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
+    dragRef.current = {
+      entry: e, duration: e.end - e.start, grabOffsetMin: y / pxPerMin,
+    };
+    evt.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (day, evt) => {
+    if (!dragRef.current) return;
+    evt.preventDefault();
+    evt.dataTransfer.dropEffect = 'move';
+    const start = dropStartFor(evt);
+    setDropHint({ day, start, end: start + dragRef.current.duration });
+  };
+
+  const handleDrop = (day, evt) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    evt.preventDefault();
+    const start = dropStartFor(evt);
+    setDropHint(null);
+    dragRef.current = null;
+    if (day !== drag.entry.day_of_week || start !== drag.entry.start) {
+      onEntryMove?.(drag.entry, day, start, start + drag.duration);
+    }
+  };
+
+  const handleDragEnd = () => { dragRef.current = null; setDropHint(null); };
 
   // Bucket entries by day, parse times, lay out lanes.
   const byDay = useMemo(() => {
@@ -87,12 +137,30 @@ export default function TimetableGrid({
   const handleColumnClick = (day, evt) => {
     if (!canAdd || !onSlotClick) return;
     const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
-    const hour = startHour + Math.floor(y / HOUR_PX);
+    const hour = startHour + Math.floor(y / hourPx);
     onSlotClick(day, hour);
   };
 
+  const ZOOM_STEPS = [1, 1.5, 2, 3];
+  const zoomStep = (dir) => {
+    const i = ZOOM_STEPS.indexOf(zoom);
+    const next = ZOOM_STEPS[Math.min(Math.max(i + dir, 0), ZOOM_STEPS.length - 1)];
+    if (next === zoom) return;
+    const el = scrollRef.current;
+    // keep whatever time is at the viewport centre in place after rescaling
+    const centerMin = el ? dayStartMin + (el.scrollTop + el.clientHeight / 2) / pxPerMin : null;
+    setZoom(next);
+    requestAnimationFrame(() => {
+      if (el && centerMin != null) {
+        el.scrollTop = Math.max(
+          (centerMin - dayStartMin) * (HOUR_PX * next) / 60 - el.clientHeight / 2, 0,
+        );
+      }
+    });
+  };
+
   return (
-    <Box sx={{ overflow: 'auto', flex: 1 }}>
+    <Box ref={scrollRef} sx={{ overflow: 'auto', flex: 1, position: 'relative' }}>
       <Box sx={{ minWidth: 52 + days.length * 132 }}>
         {/* Header row */}
         <Box sx={{
@@ -117,7 +185,7 @@ export default function TimetableGrid({
           <Box sx={{ position: 'relative', height: bodyHeight }}>
             {hours.map((h) => (
               <Typography key={h} sx={{
-                position: 'absolute', top: Math.max((h - startHour) * HOUR_PX - 6, 1), right: 6,
+                position: 'absolute', top: Math.max((h - startHour) * hourPx - 6, 1), right: 6,
                 fontSize: '0.68rem', color: 'text.disabled',
               }}>
                 {fmt(h * 60)}
@@ -130,13 +198,29 @@ export default function TimetableGrid({
             <Box
               key={d}
               onClick={(evt) => handleColumnClick(d, evt)}
+              onDragOver={(evt) => handleDragOver(d, evt)}
+              onDragLeave={() => setDropHint((h) => (h?.day === d ? null : h))}
+              onDrop={(evt) => handleDrop(d, evt)}
               sx={{
                 position: 'relative', height: bodyHeight,
                 borderLeft: '1px solid', borderColor: 'divider',
                 cursor: canAdd ? 'copy' : 'default',
-                backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent ${HOUR_PX - 1}px, rgba(0,0,0,0.06) ${HOUR_PX - 1}px, rgba(0,0,0,0.06) ${HOUR_PX}px)`,
+                backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent ${hourPx - 1}px, rgba(0,0,0,0.06) ${hourPx - 1}px, rgba(0,0,0,0.06) ${hourPx}px)`,
               }}
             >
+              {dropHint?.day === d && (
+                <Box sx={{
+                  position: 'absolute', left: 2, right: 2, zIndex: 2, pointerEvents: 'none',
+                  top: (dropHint.start - dayStartMin) * pxPerMin,
+                  height: (dropHint.end - dropHint.start) * pxPerMin - 2,
+                  border: '2px dashed #0d9488', borderRadius: '4px', bgcolor: '#0d948814',
+                  display: 'flex', alignItems: 'flex-start', px: 0.6,
+                }}>
+                  <Typography sx={{ fontSize: '0.62rem', fontWeight: 700, color: '#0d9488' }}>
+                    {fmt(dropHint.start)}–{fmt(dropHint.end)}
+                  </Typography>
+                </Box>
+              )}
               {byDay[d].map((e) => {
                 const color = getColor(e.course);
                 const top = (e.start - dayStartMin) * pxPerMin;
@@ -152,6 +236,9 @@ export default function TimetableGrid({
                   >
                     <Box
                       onClick={(evt) => { evt.stopPropagation(); onEntryClick?.(e); }}
+                      draggable={!!onEntryMove}
+                      onDragStart={(evt) => handleDragStart(e, evt)}
+                      onDragEnd={handleDragEnd}
                       sx={{
                         position: 'absolute',
                         top, height: Math.max(height - 2, 18),
@@ -161,7 +248,9 @@ export default function TimetableGrid({
                         borderLeft: `3px solid ${color}`,
                         borderRadius: '4px',
                         px: 0.6, py: compact ? 0.1 : 0.4,
-                        overflow: 'hidden', cursor: onEntryClick ? 'pointer' : 'default',
+                        overflow: 'hidden',
+                        cursor: onEntryMove ? 'grab' : (onEntryClick ? 'pointer' : 'default'),
+                        '&:active': onEntryMove ? { cursor: 'grabbing' } : undefined,
                         ...(overloaded && {
                           boxShadow: '0 0 0 1.5px #ef4444 inset',
                           bgcolor: '#ef44441a',
@@ -198,6 +287,31 @@ export default function TimetableGrid({
               })}
             </Box>
           ))}
+        </Box>
+      </Box>
+
+      {/* Zoom controls — float at the bottom-right of the grid */}
+      <Box sx={{
+        position: 'sticky', bottom: 10, height: 0, display: 'flex',
+        justifyContent: 'flex-end', pr: 1.5, pointerEvents: 'none', zIndex: 3,
+      }}>
+        <Box sx={{
+          pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 0.25,
+          transform: 'translateY(-100%)',
+          bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider',
+          borderRadius: 2, px: 0.5, py: 0.15, boxShadow: 2,
+        }}>
+          <IconButton size="small" onClick={() => zoomStep(-1)} disabled={zoom <= 1}
+            title="Zoom out">
+            <Remove sx={{ fontSize: 16 }} />
+          </IconButton>
+          <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, width: 38, textAlign: 'center' }}>
+            {Math.round(zoom * 100)}%
+          </Typography>
+          <IconButton size="small" onClick={() => zoomStep(1)} disabled={zoom >= 3}
+            title="Zoom in">
+            <Add sx={{ fontSize: 16 }} />
+          </IconButton>
         </Box>
       </Box>
     </Box>

@@ -112,3 +112,27 @@ class TestExportRoomUtilization:
         ws = wb.active
         assert ws['A1'].value == 'Room'
         assert ws['A2'].value == 'Room 101'
+
+
+class TestExportConflictsDedup:
+    def test_each_clash_listed_once(self, tenant, period):
+        import datetime, uuid
+        from apps.scheduling.models import Department, Course, Faculty, Room, ScheduleEntry
+        from apps.scheduling.exporters import export_conflicts
+
+        dept = Department.objects.create(tenant=tenant, code='GEN', name='General')
+        c1 = Course.objects.create(tenant=tenant, department=dept, code='GE 1', title='A')
+        c2 = Course.objects.create(tenant=tenant, department=dept, code='GE 2', title='B')
+        f1 = Faculty.objects.create(tenant=tenant, name='CRUZ, A', employment_type='FULL_TIME')
+        f2 = Faculty.objects.create(tenant=tenant, name='REYES, B', employment_type='FULL_TIME')
+        room = Room.objects.create(tenant=tenant, name='Room 1', room_type='LECTURE', capacity=40)
+        for c, f in ((c1, f1), (c2, f2)):
+            ScheduleEntry.objects.create(
+                tenant=tenant, academic_period=period, course=c, faculty=f, room=room,
+                day_of_week='MON', time_start=datetime.time(8), time_end=datetime.time(9),
+                group_id=uuid.uuid4())
+
+        wb = export_conflicts(tenant, period)
+        ws = wb['Conflicts']
+        data_rows = [r for r in ws.iter_rows(min_row=2, values_only=True) if r[0]]
+        assert len(data_rows) == 1   # one clash -> ONE row, not A-vs-B and B-vs-A

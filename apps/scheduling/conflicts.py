@@ -1,49 +1,71 @@
+from collections import defaultdict
+
 from django.db.models import Sum
 
 from .models import ScheduleEntry
 
 
-def _find_same_slot_entries(entry):
-    """Return entries in the exact same room, day, and time (a 100% slot match),
-    excluding self."""
-    if entry.room_id is None:
-        return ScheduleEntry.objects.none()
+def _overlapping(entry):
+    """Entries on the same day whose time range overlaps entry's (touching
+    boundaries — one ends exactly when the other starts — do NOT overlap)."""
     return ScheduleEntry.objects.filter(
         tenant=entry.tenant,
         academic_period=entry.academic_period,
         day_of_week=entry.day_of_week,
-        time_start=entry.time_start,
-        time_end=entry.time_end,
-        room_id=entry.room_id,
-    ).exclude(pk=entry.pk).select_related('course', 'faculty', 'room')
+        time_start__lt=entry.time_end,
+        time_end__gt=entry.time_start,
+    ).exclude(pk=entry.pk)
 
 
 def detect_conflicts(entry):
     """
     Detect hard conflicts and warnings for a ScheduleEntry.
 
-    A conflict is a room double-booking: another class occupies the SAME room,
-    SAME day, and the EXACT SAME time (a 100% match on room + day + time).
-    Subject is not considered — any two classes sharing the exact same
-    room/day/time are flagged. Different rooms, different days, or times that
-    only partially overlap are NOT flagged.
+    Hard conflicts (same day, OVERLAPPING times — partial overlap counts,
+    back-to-back does not):
+      - room:    another class occupies the same room (subject ignored)
+      - faculty: the same teacher is in another class (any room)
+      - section: one of this entry's sections sits in another class
 
     Returns:
         {
-            'hard': [{'type': 'room', 'message': str, 'conflicting_entry_id': int}, ...],
+            'hard': [{'type': str, 'message': str, 'conflicting_entry_id': int}, ...],
             'warnings': [{'type': str, 'message': str}, ...],
         }
     """
     hard = []
     warnings = []
 
-    for other in _find_same_slot_entries(entry):
-        # Same room + same day + exact same time = conflict, whatever the subject.
-        hard.append({
-            'type': 'room',
-            'message': f'Room {entry.room} is already booked by {other.course.code} at {other.time_start}-{other.time_end}',
-            'conflicting_entry_id': other.pk,
-        })
+    if entry.room_id is not None:
+        for other in _overlapping(entry).filter(room_id=entry.room_id) \
+                .select_related('course'):
+            hard.append({
+                'type': 'room',
+                'message': f'{entry.room} is already booked by {other.course.code} at {other.time_start}-{other.time_end}',
+                'conflicting_entry_id': other.pk,
+            })
+
+    if entry.faculty_id is not None:
+        for other in _overlapping(entry).filter(faculty_id=entry.faculty_id) \
+                .exclude(room_id=entry.room_id).select_related('course'):
+            hard.append({
+                'type': 'faculty',
+                'message': f'{entry.faculty} is also teaching {other.course.code} at {other.time_start}-{other.time_end}',
+                'conflicting_entry_id': other.pk,
+            })
+
+    section_ids = list(entry.sections.values_list('pk', flat=True))
+    if section_ids:
+        seen = {h['conflicting_entry_id'] for h in hard}
+        for other in _overlapping(entry).filter(sections__in=section_ids) \
+                .select_related('course').distinct():
+            if other.pk in seen:
+                continue   # already reported as a room/faculty clash
+            hard.append({
+                'type': 'section',
+                'message': f'Section is also in {other.course.code} at {other.time_start}-{other.time_end}',
+                'conflicting_entry_id': other.pk,
+            })
 
     # Warnings
     if entry.faculty_id:
@@ -72,3 +94,88 @@ def detect_conflicts(entry):
         })
 
     return {'hard': hard, 'warnings': warnings}
+
+
+def analyze_period(tenant, period, entries=None):
+    """Bulk equivalent of running detect_conflicts on every entry of a period,
+    computed in one pass with a handful of queries instead of thousands.
+
+    Returns {entry_id: {'hard': [...], 'warnings': [...]}} with items shaped
+    exactly like detect_conflicts' output.
+    """
+    if entries is None:
+        entries = list(
+            ScheduleEntry.objects.filter(tenant=tenant, academic_period=period)
+            .select_related('course', 'room', 'faculty')
+            .prefetch_related('sections')
+        )
+
+    sections_of = {e.pk: {s.pk for s in e.sections.all()} for e in entries}
+    result = {e.pk: {'hard': [], 'warnings': []} for e in entries}
+
+    # --- hard conflicts: sweep overlapping pairs per day -------------------
+    def add_hard(a, b):
+        """Record the clash a<->b on both sides, mirroring detect_conflicts."""
+        pair_room = a.room_id is not None and a.room_id == b.room_id
+        pair_faculty = (not pair_room and a.faculty_id is not None
+                        and a.faculty_id == b.faculty_id)
+        pair_section = (not pair_room and not pair_faculty
+                        and bool(sections_of[a.pk] & sections_of[b.pk]))
+        for me, other in ((a, b), (b, a)):
+            if pair_room:
+                item = {
+                    'type': 'room',
+                    'message': f'{me.room} is already booked by {other.course.code} at {other.time_start}-{other.time_end}',
+                }
+            elif pair_faculty:
+                item = {
+                    'type': 'faculty',
+                    'message': f'{me.faculty} is also teaching {other.course.code} at {other.time_start}-{other.time_end}',
+                }
+            elif pair_section:
+                item = {
+                    'type': 'section',
+                    'message': f'Section is also in {other.course.code} at {other.time_start}-{other.time_end}',
+                }
+            else:
+                return
+            item['conflicting_entry_id'] = other.pk
+            result[me.pk]['hard'].append(item)
+
+    by_day = defaultdict(list)
+    for e in entries:
+        by_day[e.day_of_week].append(e)
+    for day_entries in by_day.values():
+        day_entries.sort(key=lambda e: (e.time_start, e.time_end))
+        for i, a in enumerate(day_entries):
+            for b in day_entries[i + 1:]:
+                if b.time_start >= a.time_end:
+                    break          # sorted by start: nothing later overlaps a
+                add_hard(a, b)
+
+    # keep the same type ordering detect_conflicts produces (room, faculty, section)
+    priority = {'room': 0, 'faculty': 1, 'section': 2}
+    for r in result.values():
+        r['hard'].sort(key=lambda h: priority[h['type']])
+
+    # --- warnings: overload + capacity, computed from one in-memory pass ---
+    fac_units = defaultdict(lambda: 0)
+    fac_obj = {}
+    for e in entries:
+        if e.faculty_id:
+            fac_units[e.faculty_id] += e.course.lec_units + e.course.lab_units
+            fac_obj[e.faculty_id] = e.faculty
+    for e in entries:
+        if e.faculty_id and fac_units[e.faculty_id] > e.faculty.max_load_units:
+            total = fac_units[e.faculty_id]
+            result[e.pk]['warnings'].append({
+                'type': 'overload',
+                'message': f'{e.faculty} would have {total} units (max: {e.faculty.max_load_units})',
+            })
+        if e.room and e.class_size > e.room.capacity and e.room.capacity > 0:
+            result[e.pk]['warnings'].append({
+                'type': 'capacity',
+                'message': f'Class size ({e.class_size}) exceeds room capacity ({e.room.capacity})',
+            })
+
+    return result

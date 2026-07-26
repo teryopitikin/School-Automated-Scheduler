@@ -174,9 +174,15 @@ def export_conflicts(tenant, period):
         cell.fill = header_fill
 
     rows = 0
+    seen_pairs = set()
     for e in entries:
         result = detect_conflicts(e)
         for h in result['hard']:
+            # Each clash appears from both sides — list it once.
+            pair = (h['type'], *sorted((e.pk, h.get('conflicting_entry_id') or 0)))
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
             other = by_id.get(h.get('conflicting_entry_id'))
             ws.append([
                 e.course.code, e.course.title, program_of(e), sections_of(e),

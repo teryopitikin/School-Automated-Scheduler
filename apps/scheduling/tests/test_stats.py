@@ -184,3 +184,28 @@ class TestComputeStats:
 
         result = compute_stats(tenant, period)
         assert result['summary']['overloaded_faculty_count'] == 1
+
+
+class TestRoomUtilization:
+    def test_per_room_hours_and_pct(self, tenant, period, config, course, dept):
+        fac = Faculty.objects.create(tenant=tenant, name='X', employment_type='FULL_TIME')
+        r1 = Room.objects.create(tenant=tenant, name='Room 1', room_type='LECTURE', capacity=40)
+        r2 = Room.objects.create(tenant=tenant, name='Room 2', room_type='LECTURE', capacity=40)
+        # Room 1: three 2-hour classes -> 6 booked hours
+        for day in ('MON', 'WED', 'FRI'):
+            ScheduleEntry.objects.create(
+                tenant=tenant, academic_period=period, course=course, faculty=fac,
+                room=r1, day_of_week=day, time_start=datetime.time(8),
+                time_end=datetime.time(10), group_id=uuid.uuid4())
+
+        stats = compute_stats(tenant, period)
+        util = {u['name']: u for u in stats['room_utilization']}
+        # config: 7:00-21:00 = 14h/day x 5 operating days = 70 available hours
+        assert util['Room 1']['available_hours'] == 70.0
+        assert util['Room 1']['booked_hours'] == 6.0
+        assert util['Room 1']['pct'] == round(6 / 70 * 100, 1)
+        assert util['Room 2']['booked_hours'] == 0.0
+        assert util['Room 2']['pct'] == 0.0
+        assert util['Room 1']['id'] == r1.pk
+        # sorted busiest first
+        assert stats['room_utilization'][0]['name'] == 'Room 1'

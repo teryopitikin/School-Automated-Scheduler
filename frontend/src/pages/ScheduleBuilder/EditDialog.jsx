@@ -7,6 +7,7 @@ import { fetchFaculty } from '../../api/faculty';
 import { fetchRooms } from '../../api/rooms';
 import {
   updateSchedule, deleteSchedule, editScheduleGroup, deleteScheduleGroup,
+  fetchFreeRooms,
 } from '../../api/schedules';
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -26,6 +27,7 @@ export default function EditDialog({ open, onClose, entry, onSaved }) {
   const [error, setError] = useState('');
   const [hardConflicts, setHardConflicts] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [freeRoomIds, setFreeRoomIds] = useState(null);   // Set of room ids free at this slot
 
   useEffect(() => {
     if (!open || !entry) return;
@@ -33,6 +35,10 @@ export default function EditDialog({ open, onClose, entry, onSaved }) {
       setFaculty(f.data.results ?? f.data);
       setRooms(r.data.results ?? r.data);
     });
+    setFreeRoomIds(null);
+    fetchFreeRooms(entry.id)
+      .then((res) => setFreeRoomIds(new Set((res.data.rooms || []).map((r) => r.id))))
+      .catch(() => {});
     setScope('day');
     setError('');
     setHardConflicts([]);
@@ -156,9 +162,29 @@ export default function EditDialog({ open, onClose, entry, onSaved }) {
           <Grid size={6}>
             <TextField fullWidth select label="Room" value={form.room}
               onChange={(e) => setForm({ ...form, room: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }}
+              helperText={freeRoomIds
+                ? `${freeRoomIds.size} room${freeRoomIds.size === 1 ? '' : 's'} free at this time`
+                : 'Checking room availability…'}>
               <option value="">Select room</option>
-              {rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              {freeRoomIds ? (
+                <>
+                  <optgroup label="✓ Free at this class's time">
+                    {rooms.filter((r) => freeRoomIds.has(r.id)).map((r) => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="In use at this time">
+                    {rooms.filter((r) => !freeRoomIds.has(r.id)).map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}{String(r.id) === String(entry.room) ? ' (current)' : ''}
+                      </option>
+                    ))}
+                  </optgroup>
+                </>
+              ) : (
+                rooms.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)
+              )}
             </TextField>
           </Grid>
           {scope === 'day' && (

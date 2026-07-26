@@ -50,7 +50,7 @@ function describe(entry, { withCourse = false, withTime = false } = {}) {
   const parts = [];
   if (withCourse && entry.course_code) parts.push(entry.course_code);
   if (entry.section_names?.length) parts.push(entry.section_names.join(', '));
-  if (entry.room_name) parts.push(`Room ${entry.room_name}`);
+  if (entry.room_name) parts.push(entry.room_name);
   if (entry.faculty_name && entry.faculty_name !== 'TBA') parts.push(entry.faculty_name);
   if (withTime && entry.time_start) {
     parts.push(`${DAY_LABELS[entry.day_of_week] || entry.day_of_week} `
@@ -59,10 +59,28 @@ function describe(entry, { withCourse = false, withTime = false } = {}) {
   return parts.join(' · ');
 }
 
-function IssueRow({ issue, other }) {
+function ClickableLine({ text, onClick }) {
+  return (
+    <Typography
+      onClick={onClick}
+      sx={{
+        fontSize: '0.75rem', color: 'text.secondary', lineHeight: 1.35,
+        ...(onClick && {
+          cursor: 'pointer',
+          '&:hover': { color: 'primary.main', textDecoration: 'underline' },
+        }),
+      }}>
+      {text}
+    </Typography>
+  );
+}
+
+function IssueRow({ issue, self, selfId, other, onEditEntry }) {
   const meta = TYPE_META[issue.type] || { label: issue.type || 'Conflict', Icon: ErrorOutline };
   const { Icon } = meta;
+  const selfDesc = describe(self, { withCourse: true, withTime: true });
   const otherDesc = describe(other, { withCourse: true, withTime: true });
+  const otherId = other?.id ?? issue.conflicting_entry_id;
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mt: 1 }}>
       <Icon sx={{ fontSize: 18, color: 'error.main', mt: '1px', flexShrink: 0 }} />
@@ -71,10 +89,14 @@ function IssueRow({ issue, other }) {
           {meta.label}
         </Typography>
         {otherDesc ? (
-          <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', lineHeight: 1.35 }}>
-            <Box component="span" sx={{ color: 'text.disabled' }}>clashes with </Box>
-            {otherDesc}
-          </Typography>
+          <>
+            {selfDesc && (
+              <ClickableLine text={selfDesc}
+                onClick={onEditEntry && selfId ? () => onEditEntry(selfId) : undefined} />
+            )}
+            <ClickableLine text={otherDesc}
+              onClick={onEditEntry && otherId ? () => onEditEntry(otherId) : undefined} />
+          </>
         ) : (
           <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', lineHeight: 1.35 }}>
             {prettyMessage(issue.message)}
@@ -85,7 +107,7 @@ function IssueRow({ issue, other }) {
   );
 }
 
-export default function ConflictDrawer({ open, onClose, conflicts, loading, entriesById, periodId }) {
+export default function ConflictDrawer({ open, onClose, conflicts, loading, entriesById, periodId, onEditEntry }) {
   const total = conflicts.length;
   const [exporting, setExporting] = useState(false);
 
@@ -145,10 +167,16 @@ export default function ConflictDrawer({ open, onClose, conflicts, loading, entr
           </Typography>
         ) : (
           conflicts.map((c, i) => {
-            const { title, when } = parseEntry(c.entry);
+            const d = c.entry_detail;
+            const { title, when } = d
+              ? {
+                title: d.course_code,
+                when: `${DAY_LABELS[d.day_of_week] || d.day_of_week} · `
+                  + `${prettyTime(d.time_start)} – ${prettyTime(d.time_end)}`,
+              }
+              : parseEntry(c.entry);
             const hard = c.hard || [];
-            const thisEntry = entriesById?.[c.entry_id];
-            const thisDesc = describe(thisEntry);
+            const thisEntry = d || entriesById?.[c.entry_id];
             // Overload warnings are an accepted exemption and intentionally not shown here.
             return (
               <Box key={c.entry_id ?? i} sx={{
@@ -162,11 +190,10 @@ export default function ConflictDrawer({ open, onClose, conflicts, loading, entr
                 {when && (
                   <Typography sx={{ fontSize: '0.72rem', color: 'text.disabled' }}>{when}</Typography>
                 )}
-                {thisDesc && (
-                  <Typography sx={{ fontSize: '0.72rem', color: 'text.secondary' }}>{thisDesc}</Typography>
-                )}
                 {hard.map((h, j) => (
-                  <IssueRow key={`h${j}`} issue={h} other={entriesById?.[h.conflicting_entry_id]} />
+                  <IssueRow key={`h${j}`} issue={h} self={thisEntry} selfId={c.entry_id}
+                    other={h.other || entriesById?.[h.conflicting_entry_id]}
+                    onEditEntry={onEditEntry} />
                 ))}
               </Box>
             );

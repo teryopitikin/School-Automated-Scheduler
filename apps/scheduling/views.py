@@ -342,23 +342,79 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
         qs.delete()
         return Response({'deleted': count}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['get'], url_path='free-rooms')
+    def free_rooms(self, request, pk=None):
+        """Rooms with no class overlapping this entry's day/time — candidates
+        for resolving a room double-booking. Same room-type as the entry's
+        current room ranks first; the entry's own room is excluded."""
+        entry = self.get_object()
+        busy_room_ids = set(
+            ScheduleEntry.objects.filter(
+                tenant=entry.tenant,
+                academic_period=entry.academic_period,
+                day_of_week=entry.day_of_week,
+                time_start__lt=entry.time_end,
+                time_end__gt=entry.time_start,
+            ).values_list('room_id', flat=True)
+        )
+        rooms = Room.objects.filter(tenant=entry.tenant).exclude(
+            pk__in=busy_room_ids | {entry.room_id},
+        )
+        current_type = entry.room.room_type if entry.room else ''
+        data = sorted(
+            ({'id': r.pk, 'name': r.name, 'room_type': r.room_type,
+              'capacity': r.capacity} for r in rooms),
+            key=lambda r: (r['room_type'] != current_type, r['name']),
+        )
+        return Response({'rooms': data})
+
     @action(detail=False, methods=['get'])
     def conflicts(self, request):
-        """List all conflicts across the current academic period."""
+        """List all conflicts across the current academic period.
+
+        Each item carries `entry_detail` (course, sections, faculty, room,
+        day, times) for the flagged entry, and each hard conflict carries the
+        same details for the clashing entry under `other`.
+        """
         period_id = request.query_params.get('academic_period')
         if not period_id:
             return Response(
                 {'detail': 'academic_period query parameter is required.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        entries = self.get_queryset().filter(academic_period_id=period_id)
+        entries = list(
+            self.get_queryset().filter(academic_period_id=period_id)
+            .select_related('course', 'faculty', 'room')
+            .prefetch_related('sections__program')
+        )
+
+        def brief(e):
+            return {
+                'id': e.pk,
+                'course_code': e.course.code,
+                'section_names': [str(s) for s in e.sections.all()],
+                'faculty_name': e.faculty.name if e.faculty else 'TBA',
+                'room_name': e.room.name if e.room else '',
+                'day_of_week': e.day_of_week,
+                'time_start': str(e.time_start),
+                'time_end': str(e.time_end),
+            }
+
+        from .conflicts import analyze_period
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        analysis = analyze_period(tenant, AcademicPeriod.objects.get(pk=period_id), entries=entries)
+
+        briefs = {e.pk: brief(e) for e in entries}
         all_conflicts = []
         for entry in entries:
-            result = detect_conflicts(entry)
+            result = analysis[entry.pk]
             if result['hard'] or result['warnings']:
+                for h in result['hard']:
+                    h['other'] = briefs.get(h.get('conflicting_entry_id'))
                 all_conflicts.append({
                     'entry_id': entry.pk,
                     'entry': str(entry),
+                    'entry_detail': briefs[entry.pk],
                     **result,
                 })
         return Response(all_conflicts)
@@ -440,7 +496,7 @@ class ScheduleConfigViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 def import_excel_view(request):
     import openpyxl
 
-    from .importers import import_excel
+    from .cleaned_importer import import_cleaned
 
     file = request.FILES.get('file')
     period_id = request.data.get('academic_period')
@@ -462,7 +518,7 @@ def import_excel_view(request):
     except Exception:
         return Response({'detail': 'Invalid Excel file.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    result = import_excel(wb, tenant, period)
+    result = import_cleaned(wb, tenant, period)
     return Response(result, status=status.HTTP_201_CREATED)
 
 
