@@ -1,31 +1,31 @@
 """
-v2 — split ~/Desktop/import.xlsx (Sheet1) Time Schedule into uniform
-Day + Time, emitting ONE ROW PER MEETING so a class with a different
-time on each day becomes separate rows. Read-only on the source; writes
-a fresh workbook. No DB import.
+v3 — split the consolidated source workbook (Sheet1) Time Schedule into
+uniform Day + Time, emitting ONE ROW PER MEETING so a class with a
+different time on each day becomes separate rows. Read-only on the
+source; writes a fresh workbook. No DB import.
 """
 import datetime
 import re
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
 
-SRC = '/Users/macbok16-a/Desktop/import.xlsx'
+SRC = '/Users/macbok16-a/Downloads/Consolidated_1.xlsx'
 OUT = '/Users/macbok16-a/Desktop/import_cleaned.xlsx'
 
 # Manual day fixes for rows whose cell has a time but no weekday.
 # Keyed by Excel row number; the day is prepended before parsing.
 MANUAL_DAY = {
-    56: 'SAT',   # FS 1  -> Saturday 8:00-10:00 AM
-    57: 'SAT',   # FS 2  -> Saturday 10:00-12:00 NN
+    95: 'SAT',   # FS 1 (BSED-ENG-4A) -> Saturday 8:00-10:00 AM
+    96: 'SAT',   # FS 2 (BSED-ENG-4A) -> Saturday 10:00-12:00 NN
 }
 
 # Other targeted data fixes, keyed by Excel row number.
-MANUAL_SEMESTER = {230: 'First Semester 2026-2027'}  # was a stray '4'
-MANUAL_ROOM = {298: 'Asynchronous'}                  # was blank
+MANUAL_SEMESTER = {286: 'First Semester 2026-2027'}  # was a stray '4'
+MANUAL_ROOM = {364: 'Asynchronous'}                  # was blank
 # Replace the raw Time Schedule text for rows with a data-entry error.
-MANUAL_SCHEDULE = {260: 'MWF 03:00 PM - 04:00 PM'}   # CRIM 5 (3D-WHORL) source typo: was 03:00 AM
+MANUAL_SCHEDULE = {316: 'MWF 03:00 PM - 04:00 PM'}   # CRIM 5 (3D-WHORL) source typo: was 03:00 AM
 # Subject Code cell errors (copy-paste slips in the source sheet).
-MANUAL_SUBJECT = {265: 'LEA 2'}   # cell literally contained '08:00 AM - 09:00 AM'
+MANUAL_SUBJECT = {321: 'LEA 2'}   # cell literally contained '08:00 AM - 09:00 AM'
 
 # ---------------------------------------------------------------- days
 DAY_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
