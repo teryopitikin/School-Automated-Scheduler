@@ -131,6 +131,23 @@ export default function TimetableGrid({
     return map;
   }, [entries, days]);
 
+  // Merged occupied intervals per day — rendered as gray bands behind the
+  // cards so free time reads as plain background at a glance.
+  const takenByDay = useMemo(() => {
+    const map = {};
+    Object.keys(byDay).forEach((d) => {
+      const sorted = [...byDay[d]].sort((a, b) => a.start - b.start);
+      const merged = [];
+      sorted.forEach(({ start, end }) => {
+        const last = merged[merged.length - 1];
+        if (last && start <= last.end) last.end = Math.max(last.end, end);
+        else merged.push({ start, end });
+      });
+      map[d] = merged;
+    });
+    return map;
+  }, [byDay]);
+
   const hours = Array.from({ length: endHour - startHour + 1 }, (_, i) => startHour + i);
   const gridCols = `52px repeat(${days.length}, minmax(132px, 1fr))`;
 
@@ -208,6 +225,15 @@ export default function TimetableGrid({
                 backgroundImage: `repeating-linear-gradient(to bottom, transparent, transparent ${hourPx - 1}px, rgba(0,0,0,0.06) ${hourPx - 1}px, rgba(0,0,0,0.06) ${hourPx}px)`,
               }}
             >
+              {takenByDay[d]?.map((iv, i) => (
+                <Box key={`taken-${i}`} sx={{
+                  position: 'absolute', left: 0, right: 0, pointerEvents: 'none',
+                  top: (iv.start - dayStartMin) * pxPerMin,
+                  height: (iv.end - iv.start) * pxPerMin,
+                  bgcolor: (t) => (t.palette.mode === 'dark'
+                    ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.09)'),
+                }} />
+              ))}
               {dropHint?.day === d && (
                 <Box sx={{
                   position: 'absolute', left: 2, right: 2, zIndex: 2, pointerEvents: 'none',
