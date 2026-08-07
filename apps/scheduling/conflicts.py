@@ -5,6 +5,13 @@ from django.db.models import Sum
 from .models import ScheduleEntry
 
 
+def _is_async(entry):
+    """Entries held in a non-physical 'Asynchronous' room have no fixed
+    meeting slot, so they are exempt from hard-conflict tagging entirely."""
+    name = getattr(entry.room, 'name', '') or ''
+    return 'async' in name.lower()
+
+
 def _overlapping(entry):
     """Entries on the same day whose time range overlaps entry's (touching
     boundaries — one ends exactly when the other starts — do NOT overlap)."""
@@ -35,8 +42,9 @@ def detect_conflicts(entry):
     """
     hard = []
     warnings = []
+    entry_is_async = _is_async(entry)
 
-    if entry.room_id is not None:
+    if entry.room_id is not None and not entry_is_async:
         for other in _overlapping(entry).filter(room_id=entry.room_id) \
                 .select_related('course'):
             hard.append({
@@ -45,9 +53,11 @@ def detect_conflicts(entry):
                 'conflicting_entry_id': other.pk,
             })
 
-    if entry.faculty_id is not None:
+    if entry.faculty_id is not None and not entry_is_async:
         for other in _overlapping(entry).filter(faculty_id=entry.faculty_id) \
-                .exclude(room_id=entry.room_id).select_related('course'):
+                .exclude(room_id=entry.room_id).select_related('course', 'room'):
+            if _is_async(other):
+                continue
             hard.append({
                 'type': 'faculty',
                 'message': f'{entry.faculty} is also teaching {other.course.code} at {other.time_start}-{other.time_end}',
@@ -55,12 +65,14 @@ def detect_conflicts(entry):
             })
 
     section_ids = list(entry.sections.values_list('pk', flat=True))
-    if section_ids:
+    if section_ids and not entry_is_async:
         seen = {h['conflicting_entry_id'] for h in hard}
         for other in _overlapping(entry).filter(sections__in=section_ids) \
-                .select_related('course').distinct():
+                .select_related('course', 'room').distinct():
             if other.pk in seen:
                 continue   # already reported as a room/faculty clash
+            if _is_async(other):
+                continue
             hard.append({
                 'type': 'section',
                 'message': f'Section is also in {other.course.code} at {other.time_start}-{other.time_end}',
@@ -116,6 +128,8 @@ def analyze_period(tenant, period, entries=None):
     # --- hard conflicts: sweep overlapping pairs per day -------------------
     def add_hard(a, b):
         """Record the clash a<->b on both sides, mirroring detect_conflicts."""
+        if _is_async(a) or _is_async(b):
+            return   # asynchronous classes never clash with anything
         pair_room = a.room_id is not None and a.room_id == b.room_id
         pair_faculty = (not pair_room and a.faculty_id is not None
                         and a.faculty_id == b.faculty_id)

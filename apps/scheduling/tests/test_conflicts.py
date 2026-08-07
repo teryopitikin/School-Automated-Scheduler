@@ -279,3 +279,69 @@ class TestAnalyzePeriodBulk:
             assert norm(got['hard']) == norm(single['hard']), f'entry {e.pk} hard mismatch'
             assert sorted(w['type'] for w in got['warnings']) == \
                    sorted(w['type'] for w in single['warnings']), f'entry {e.pk} warnings mismatch'
+
+
+class TestAsynchronousExemption:
+    """Entries in an 'Asynchronous' room have no fixed meeting slot and must
+    never be tagged as (or cause) a hard conflict."""
+
+    @pytest.fixture
+    def async_room(self, tenant):
+        return Room.objects.create(
+            tenant=tenant, name='Asynchronous', room_type='LECTURE', capacity=0,
+        )
+
+    def test_two_async_classes_same_slot_no_room_conflict(
+            self, tenant, period, course, course2, faculty, async_room, section):
+        faculty2 = Faculty.objects.create(
+            tenant=tenant, name='Dr. Jones', employment_type='FULL_TIME',
+            priority_level=3, max_load_units=24,
+        )
+        e1 = make_entry(tenant, period, course, faculty, async_room, 'MON', (8, 0), (10, 0))
+        e2 = make_entry(tenant, period, course2, faculty2, async_room, 'MON', (8, 0), (10, 0))
+        assert detect_conflicts(e1)['hard'] == []
+        assert detect_conflicts(e2)['hard'] == []
+
+    def test_faculty_in_async_and_physical_class_no_conflict(
+            self, tenant, period, course, course2, faculty, room, async_room):
+        physical = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0))
+        async_e = make_entry(tenant, period, course2, faculty, async_room, 'MON', (8, 0), (10, 0))
+        assert detect_conflicts(physical)['hard'] == []
+        assert detect_conflicts(async_e)['hard'] == []
+
+    def test_section_in_async_and_physical_class_no_conflict(
+            self, tenant, period, course, course2, faculty, room, async_room, section):
+        faculty2 = Faculty.objects.create(
+            tenant=tenant, name='Dr. Jones', employment_type='FULL_TIME',
+            priority_level=3, max_load_units=24,
+        )
+        physical = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        async_e = make_entry(tenant, period, course2, faculty2, async_room, 'MON', (8, 0), (10, 0), [section])
+        assert detect_conflicts(physical)['hard'] == []
+        assert detect_conflicts(async_e)['hard'] == []
+
+    def test_physical_conflicts_still_detected(
+            self, tenant, period, course, course2, faculty, room, async_room, section):
+        """The exemption must not swallow real physical clashes."""
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
+        assert any(h['type'] == 'room' for h in detect_conflicts(e1)['hard'])
+
+    def test_analyze_period_matches_per_entry(
+            self, tenant, period, course, course2, faculty, room, async_room, section):
+        from apps.scheduling.conflicts import analyze_period
+
+        faculty2 = Faculty.objects.create(
+            tenant=tenant, name='Dr. Jones', employment_type='FULL_TIME',
+            priority_level=3, max_load_units=24,
+        )
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, async_room, 'MON', (8, 0), (10, 0), [section])
+        e3 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0))  # real room clash w/ e1
+        bulk = analyze_period(tenant, period)
+        assert bulk[e2.pk]['hard'] == []
+        for e in (e1, e2, e3):
+            single = detect_conflicts(e)
+            def norm(items):
+                return sorted((i['type'], i['conflicting_entry_id']) for i in items)
+            assert norm(bulk[e.pk]['hard']) == norm(single['hard'])
