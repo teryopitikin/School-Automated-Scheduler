@@ -154,6 +154,9 @@ export default function TimetableGrid({
   const handleColumnClick = (day, evt) => {
     if (!canAdd || !onSlotClick) return;
     const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
+    const clickedMin = dayStartMin + y / pxPerMin;
+    // Taken (grayed) slots can't be added to — only free time is clickable.
+    if (takenByDay[day]?.some((iv) => clickedMin >= iv.start && clickedMin < iv.end)) return;
     const hour = startHour + Math.floor(y / hourPx);
     onSlotClick(day, hour);
   };
@@ -227,7 +230,9 @@ export default function TimetableGrid({
             >
               {takenByDay[d]?.map((iv, i) => (
                 <Box key={`taken-${i}`} sx={{
-                  position: 'absolute', left: 0, right: 0, pointerEvents: 'none',
+                  position: 'absolute', left: 0, right: 0,
+                  pointerEvents: canAdd ? 'auto' : 'none',
+                  cursor: canAdd ? 'not-allowed' : undefined,
                   top: (iv.start - dayStartMin) * pxPerMin,
                   height: (iv.end - iv.start) * pxPerMin,
                   bgcolor: (t) => (t.palette.mode === 'dark'
