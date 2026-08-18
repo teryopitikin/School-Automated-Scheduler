@@ -4,7 +4,7 @@ import {
   Box, TextField, Typography, Tabs, Tab, Badge, Chip, CircularProgress,
   Dialog, DialogTitle, DialogContent, DialogActions, Button, Alert,
 } from '@mui/material';
-import { Warning } from '@mui/icons-material';
+import { Warning, EventBusy } from '@mui/icons-material';
 import CourseList from './CourseList';
 import TimetableGrid from './TimetableGrid';
 import AssignmentDialog from './AssignmentDialog';
@@ -44,6 +44,7 @@ export default function ScheduleBuilder() {
   const [assignSlot, setAssignSlot] = useState({ day: '', hour: 0 });
   const [editOpen, setEditOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
+  const [unscheduledOpen, setUnscheduledOpen] = useState(false);
   const [moveBlock, setMoveBlock] = useState(null);   // blocked drag-move + its clashes
   const [moving, setMoving] = useState(false);
 
@@ -55,8 +56,8 @@ export default function ScheduleBuilder() {
   }, [searchParams]);
 
   const days = config?.operating_days?.length ? config.operating_days : DEFAULT_DAYS;
-  const startHour = config ? parseInt(config.earliest_start_time?.split(':')[0], 10) || 7 : 7;
-  const endHour = config ? parseInt(config.latest_end_time?.split(':')[0], 10) || 21 : 21;
+  const configStartHour = config ? parseInt(config.earliest_start_time?.split(':')[0], 10) || 7 : 7;
+  const configEndHour = config ? parseInt(config.latest_end_time?.split(':')[0], 10) || 21 : 21;
 
   useEffect(() => {
     fetchAcademicPeriods().then((res) => {
@@ -154,6 +155,25 @@ export default function ScheduleBuilder() {
     schedules.forEach((e) => { m[e.id] = e; });
     return m;
   }, [schedules]);
+
+  // Widen the grid window so entries outside the configured hours still display
+  const [startHour, endHour] = useMemo(() => {
+    let s = configStartHour;
+    let e = configEndHour;
+    schedules.forEach((en) => {
+      const sh = parseInt(en.time_start, 10);
+      const [eh, em] = String(en.time_end || '').split(':').map((v) => parseInt(v, 10));
+      if (!Number.isNaN(sh)) s = Math.min(s, sh);
+      if (!Number.isNaN(eh)) e = Math.max(e, eh + (em > 0 ? 1 : 0));
+    });
+    return [s, e];
+  }, [schedules, configStartHour, configEndHour]);
+
+  // Subjects with no schedule entry in the viewed period
+  const unscheduledCourses = useMemo(() => {
+    const used = new Set(schedules.map((e) => e.course));
+    return courses.filter((c) => !used.has(c.id));
+  }, [courses, schedules]);
 
   useEffect(() => {
     if (viewTab === PROGRAM && !selectedProgram && programList.length) setSelectedProgram(programList[0]);
@@ -344,6 +364,11 @@ export default function ScheduleBuilder() {
               <Chip size="small" color="error" icon={<Warning />}
                 label={`Overloaded · ${facultyUnits[selectedFaculty]} units (max ${OVERLOAD_MAX})`} />
             )}
+            {unscheduledCourses.length > 0 && (
+              <Chip size="small" color="warning" icon={<EventBusy />}
+                label={`${unscheduledCourses.length} unscheduled`}
+                onClick={() => setUnscheduledOpen(true)} sx={{ cursor: 'pointer' }} />
+            )}
           </Box>
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
             <Tabs value={viewTab} onChange={(_, v) => switchLens(v)} sx={{ minHeight: 36 }}>
@@ -406,6 +431,28 @@ export default function ScheduleBuilder() {
             )}>
             Move anyway
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Subjects with no schedule entry in the viewed period */}
+      <Dialog open={unscheduledOpen} onClose={() => setUnscheduledOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Unscheduled subjects ({unscheduledCourses.length})</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            These subjects have no schedule entry this period. Click an empty slot in the
+            timetable to plot one.
+          </Typography>
+          <Box component="ul" sx={{ pl: 2.5, m: 0, maxHeight: 360, overflowY: 'auto' }}>
+            {unscheduledCourses.map((c) => (
+              <li key={c.id} style={{ fontSize: '0.85rem', marginBottom: 4 }}>
+                <strong>{c.code}</strong> — {c.title}
+                {' · '}{c.total_units || (c.lec_units + c.lab_units)} units
+              </li>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnscheduledOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
 
