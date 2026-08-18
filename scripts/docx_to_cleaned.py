@@ -151,11 +151,15 @@ def clean_cell(text):
     return re.sub(r'\s+', ' ', text.replace('\n', ' ')).strip()
 
 
+ROOM_FIXES = {'GYMNASSSIUM': 'Gymnasium', 'GYMNASIUM': 'Gymnasium'}
+
+
 def norm_room(raw):
     raw = clean_cell(raw)
     if re.fullmatch(r'\d+', raw):
         raw = f'Room {raw}'
     raw = re.sub(r'(?i)^room\b', 'Room', raw)
+    raw = ROOM_FIXES.get(raw.upper(), raw)
     # 'Room 016' / 'Room 07' -> 'Room 16' / 'Room 7' so one room = one record
     return re.sub(r'^Room 0+(\d)', r'Room \1', raw)
 
@@ -173,6 +177,115 @@ HEADERS = ['Subject Code', 'Descriptive Title', 'Units', 'Semester',
            'Original Time Schedule', 'Parse Status', 'Notes']
 
 
+ORDINAL = {1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th'}
+
+
+class Emitter:
+    def __init__(self, ws):
+        self.ws = ws
+        self.n_rows = self.n_bad = 0
+
+    def emit(self, code, title, units, room, instr, program, year, section,
+             meetings, orig):
+        """meetings: list of (day_string, time_range_string)."""
+        code = CODE_FIXES.get(code, code)
+        instr = NAME_FIXES.get(instr, instr) or 'TBA'
+        year_s = f'{ORDINAL.get(year, year)} Year'
+        parsed = []
+        for d_s, t_s in meetings:
+            days = parse_day_string(d_s)
+            rng = parse_time_range(t_s)
+            if not days or not rng:
+                parsed = None
+                break
+            parsed.append((days, rng))
+        if parsed is None:
+            self.n_bad += 1
+            self.ws.append([code, title, units, SEMESTER, '', '', '', '', '',
+                            room, instr, program, year_s, section,
+                            orig, 'UNMATCHED: docx parse', ''])
+            return
+        multi = len(parsed) > 1
+        for k, (days, (start, end)) in enumerate(parsed, 1):
+            ordered = [d for d in DAY_ORDER if d in days]
+            day_label = '-'.join(DAY_LABEL[d] for d in ordered)
+            self.ws.append([code, title, units, SEMESTER,
+                            day_label, f'{fmt(start)} - {fmt(end)}',
+                            fmt(start), fmt(end),
+                            f'{k}/{len(parsed)}' if multi else '',
+                            room, instr, program, year_s, section,
+                            orig, 'OK', ''])
+            self.n_rows += 1
+
+
+def lines(raw):
+    return [clean_cell(x) for x in raw.split('\n') if clean_cell(x)]
+
+
+def day_table(tbl, program, em):
+    """Format A: banner rows + DAY | TIME | CODE | TITLE | UNITS | ROOM |
+    INSTRUCTOR, one table per year level, no explicit section names."""
+    year = None
+    in_data = False
+    for row in tbl.rows:
+        cells = [c.text for c in row.cells]
+        texts = [clean_cell(c) for c in cells]
+        if len(set(texts)) == 1:               # merged banner row
+            y = year_from_header(texts[0])
+            if y:
+                year = y
+            continue
+        if texts[0].upper() == 'DAY':
+            in_data = True
+            continue
+        if texts[0].upper().startswith('TOTAL'):
+            in_data = False
+            continue
+        if not in_data:
+            continue
+        day_s, time_s, code, title, units, room, instr = texts[:7]
+        if not code:
+            continue
+        # DAY and TIME cells pair up line-by-line for split meetings
+        day_lines, time_lines = lines(cells[0]), lines(cells[1])
+        if len(day_lines) > 1 and len(day_lines) == len(time_lines):
+            meetings = list(zip(day_lines, time_lines))
+        else:
+            meetings = [(day_s, time_s)]
+        em.emit(code, title, units, norm_room(room), instr, program, year,
+                f'{program}-{year}A', meetings,
+                ' ; '.join(f'{d} {t}' for d, t in meetings))
+
+
+def columnar_table(tbl, program, em):
+    """Format B: Subject | Subject(title) | Section | from | to | Days |
+    Room | Instructor | Max # | Units, with explicit section names and
+    line-paired from/to/Days cells (blank middle lines allowed)."""
+    header = [clean_cell(c.text).upper() for c in tbl.rows[0].cells]
+    col = {name: header.index(name) for name in
+           ('SECTION', 'FROM', 'TO', 'DAYS', 'ROOM', 'INSTRUCTOR', 'UNITS')}
+    for row in tbl.rows[1:]:
+        cells = [c.text for c in row.cells]
+        texts = [clean_cell(c) for c in cells]
+        code, title = texts[0], texts[1]
+        if not code:
+            continue
+        section = texts[col['SECTION']]
+        m = re.search(r'\d', section)
+        year = int(m.group()) if m else 1
+        froms = lines(cells[col['FROM']])
+        tos = lines(cells[col['TO']])
+        dayls = lines(cells[col['DAYS']])
+        if len(froms) == len(tos) == len(dayls):
+            meetings = [(d, f'{f} - {t}') for d, f, t in zip(dayls, froms, tos)]
+        else:
+            meetings = [(texts[col['DAYS']],
+                         f"{texts[col['FROM']]} - {texts[col['TO']]}")]
+        em.emit(code, title, texts[col['UNITS']], norm_room(texts[col['ROOM']]),
+                texts[col['INSTRUCTOR']], program, year, section, meetings,
+                ' ; '.join(f'{d} {t}' for d, t in meetings))
+
+
 def convert(src, program, out_path):
     doc = docx.Document(src)
     if os.path.exists(out_path):
@@ -186,73 +299,18 @@ def convert(src, program, out_path):
         for c in ws[1]:
             c.font = Font(bold=True)
 
-    n_rows = n_bad = 0
-    ordinal = {1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th'}
+    em = Emitter(ws)
     for tbl in doc.tables:
-        year = None
-        in_data = False
-        for row in tbl.rows:
-            cells = [c.text for c in row.cells]
-            texts = [clean_cell(c) for c in cells]
-            if len(set(texts)) == 1:               # merged banner row
-                y = year_from_header(texts[0])
-                if y:
-                    year = y
-                continue
-            if texts[0].upper() == 'DAY':
-                in_data = True
-                continue
-            if not in_data or texts[0].upper().startswith('TOTAL'):
-                in_data = False if texts[0].upper().startswith('TOTAL') else in_data
-                continue
-            day_s, time_s, code, title, units, room, instr = texts[:7]
-            if not code:
-                continue
-            code = CODE_FIXES.get(code, code)
-            instr = NAME_FIXES.get(instr, instr)
-            section = f'{program}-{year}A'
-            base = dict(room=norm_room(room), instr=instr or 'TBA',
-                        year=f'{ordinal.get(year, year)} Year', section=section)
-
-            # A row can hold several meetings: the DAY and TIME cells pair up
-            # line-by-line (e.g. 'Monday\nTuesday' with '1:00-2:00PM\n9:00-11:00AM').
-            day_lines = [clean_cell(x) for x in cells[0].split('\n') if clean_cell(x)]
-            time_lines = [clean_cell(x) for x in cells[1].split('\n') if clean_cell(x)]
-            if len(day_lines) > 1 and len(day_lines) == len(time_lines):
-                meetings = list(zip(day_lines, time_lines))
-            else:
-                meetings = [(day_s, time_s)]
-
-            parsed = []
-            for d_s, t_s in meetings:
-                days = parse_day_string(d_s)
-                rng = parse_time_range(t_s)
-                if not days or not rng:
-                    parsed = None
-                    break
-                parsed.append((days, rng))
-            orig = ' ; '.join(f'{d} {t}' for d, t in meetings)
-            if parsed is None:
-                n_bad += 1
-                ws.append([code, title, units, SEMESTER, '', '', '', '', '',
-                           base['room'], base['instr'], program, base['year'],
-                           section, orig, 'UNMATCHED: docx parse', ''])
-                continue
-            multi = len(parsed) > 1
-            for k, (days, (start, end)) in enumerate(parsed, 1):
-                ordered = [d for d in DAY_ORDER if d in days]
-                day_label = '-'.join(DAY_LABEL[d] for d in ordered)
-                ws.append([code, title, units, SEMESTER,
-                           day_label, f'{fmt(start)} - {fmt(end)}',
-                           fmt(start), fmt(end),
-                           f'{k}/{len(parsed)}' if multi else '',
-                           base['room'], base['instr'], program, base['year'],
-                           section, orig, 'OK', ''])
-                n_rows += 1
-
+        first = [clean_cell(c.text).upper() for c in tbl.rows[0].cells]
+        headers_flat = {clean_cell(c.text).upper()
+                        for r in tbl.rows for c in r.cells}
+        if 'SUBJECT' in first and 'FROM' in first:
+            columnar_table(tbl, program, em)
+        elif 'DAY' in headers_flat:
+            day_table(tbl, program, em)
     wb.save(out_path)
     print(f'{os.path.basename(src)} [{program}] -> {out_path}: '
-          f'{n_rows} rows written, {n_bad} unmatched')
+          f'{em.n_rows} rows written, {em.n_bad} unmatched')
 
 
 if __name__ == '__main__':
