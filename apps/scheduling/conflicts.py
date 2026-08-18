@@ -12,6 +12,17 @@ def _is_async(entry):
     return 'async' in name.lower()
 
 
+PLACEHOLDER_ROOM_NAMES = {'n/a', '-', ''}
+
+
+def _is_placeholder_room(entry):
+    """Placeholder rooms ('N/A', '-') mark entries with no specific room
+    (OJT, field study, etc.) — they cannot be double-booked, so they are
+    exempt from ROOM conflicts only. Faculty/section clashes still apply."""
+    name = getattr(entry.room, 'name', '') or ''
+    return name.strip().lower() in PLACEHOLDER_ROOM_NAMES
+
+
 def _overlapping(entry):
     """Entries on the same day whose time range overlaps entry's (touching
     boundaries — one ends exactly when the other starts — do NOT overlap)."""
@@ -44,7 +55,9 @@ def detect_conflicts(entry):
     warnings = []
     entry_is_async = _is_async(entry)
 
-    if entry.room_id is not None and not entry_is_async:
+    entry_is_placeholder = _is_placeholder_room(entry)
+
+    if entry.room_id is not None and not entry_is_async and not entry_is_placeholder:
         for other in _overlapping(entry).filter(room_id=entry.room_id) \
                 .select_related('course'):
             hard.append({
@@ -54,8 +67,12 @@ def detect_conflicts(entry):
             })
 
     if entry.faculty_id is not None and not entry_is_async:
-        for other in _overlapping(entry).filter(faculty_id=entry.faculty_id) \
-                .exclude(room_id=entry.room_id).select_related('course', 'room'):
+        # same-room pairs are normally reported as room clashes; for a
+        # placeholder room there is no room clash, so don't exclude them here
+        faculty_qs = _overlapping(entry).filter(faculty_id=entry.faculty_id)
+        if not entry_is_placeholder:
+            faculty_qs = faculty_qs.exclude(room_id=entry.room_id)
+        for other in faculty_qs.select_related('course', 'room'):
             if _is_async(other):
                 continue
             hard.append({
@@ -130,7 +147,8 @@ def analyze_period(tenant, period, entries=None):
         """Record the clash a<->b on both sides, mirroring detect_conflicts."""
         if _is_async(a) or _is_async(b):
             return   # asynchronous classes never clash with anything
-        pair_room = a.room_id is not None and a.room_id == b.room_id
+        pair_room = (a.room_id is not None and a.room_id == b.room_id
+                     and not _is_placeholder_room(a))
         pair_faculty = (not pair_room and a.faculty_id is not None
                         and a.faculty_id == b.faculty_id)
         pair_section = (not pair_room and not pair_faculty
