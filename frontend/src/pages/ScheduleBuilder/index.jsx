@@ -182,8 +182,9 @@ export default function ScheduleBuilder() {
   }, [viewTab, programList, facultyList, roomsList]); // eslint-disable-line
 
   const visibleEntries = useMemo(() => {
-    // No-Schedule lens: show everything so vacancies are visible while plotting
-    if (viewTab === NOSCHED) return schedules;
+    // No-Schedule lens: only the unscheduled subjects are shown (sidebar);
+    // the grid stays empty as a clean canvas to plot them into
+    if (viewTab === NOSCHED) return [];
     if (viewTab === SECTION) {
       if (selectedSection === ALL_SECTIONS) return schedules;
       if (selectedSection) return schedules.filter((e) => (e.sections || []).map(String).includes(String(selectedSection)));
@@ -201,7 +202,7 @@ export default function ScheduleBuilder() {
   const subtitleFor = (e) => {
     if (viewTab === FACULTY) return [(e.section_names || []).join(', '), e.room_name].filter(Boolean).join(' · ');
     if (viewTab === ROOM) return [(e.section_names || []).join(', '), e.faculty_name].filter(Boolean).join(' · ');
-    if (viewTab === PROGRAM || viewTab === NOSCHED || selectedSection === ALL_SECTIONS) {
+    if (viewTab === PROGRAM || selectedSection === ALL_SECTIONS) {
       return [(e.section_names || []).join(', '), e.room_name, e.faculty_name].filter(Boolean).join(' · ');
     }
     return [e.room_name, e.faculty_name].filter(Boolean).join(' · ');
@@ -417,7 +418,7 @@ export default function ScheduleBuilder() {
           subtitleFor={subtitleFor}
           overloadedFaculty={overloadedFaculty}
           canAdd={canAdd}
-          addOnTaken={viewTab === PROGRAM || viewTab === NOSCHED || (viewTab === SECTION && selectedSection === ALL_SECTIONS)}
+          addOnTaken={viewTab === PROGRAM || (viewTab === SECTION && selectedSection === ALL_SECTIONS)}
           onSlotClick={handleSlotClick}
           onEntryClick={handleEntryClick}
           onEntryMove={handleEntryMove}
