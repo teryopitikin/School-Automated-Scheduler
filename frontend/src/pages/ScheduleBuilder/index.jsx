@@ -18,6 +18,7 @@ import { fetchConfig } from '../../api/config';
 
 const DEFAULT_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const ALL_SECTIONS = '__ALL__';
+const ALL_PROGRAMS = '__ALL__';
 // lens tab indices
 const SECTION = 0; const PROGRAM = 1; const FACULTY = 2; const ROOM = 3;
 
@@ -129,7 +130,8 @@ export default function ScheduleBuilder() {
   const allSectionOptions = useMemo(
     () => sections.map((s) => ({ id: s.id, label: sectionLabel(s) })), [sections]);
   const programSectionOptions = useMemo(
-    () => sections.filter((s) => s.program_code === selectedProgram).map((s) => ({ id: s.id, label: sectionLabel(s) })),
+    () => sections.filter((s) => selectedProgram === ALL_PROGRAMS || s.program_code === selectedProgram)
+      .map((s) => ({ id: s.id, label: sectionLabel(s) })),
     [sections, selectedProgram]);
 
   // Overloaded faculty (matches backend per-entry unit sum)
@@ -165,6 +167,7 @@ export default function ScheduleBuilder() {
       if (selectedSection) return schedules.filter((e) => (e.sections || []).map(String).includes(String(selectedSection)));
     }
     if (viewTab === PROGRAM && selectedProgram) {
+      if (selectedProgram === ALL_PROGRAMS) return schedules;
       const ids = new Set(sections.filter((s) => s.program_code === selectedProgram).map((s) => String(s.id)));
       return schedules.filter((e) => (e.sections || []).some((id) => ids.has(String(id))));
     }
@@ -183,7 +186,10 @@ export default function ScheduleBuilder() {
   };
 
   const currentTitle = () => {
-    if (viewTab === PROGRAM) return selectedProgram ? `Program — ${selectedProgram}` : 'Select a program';
+    if (viewTab === PROGRAM) {
+      if (selectedProgram === ALL_PROGRAMS) return 'Program — All programs';
+      return selectedProgram ? `Program — ${selectedProgram}` : 'Select a program';
+    }
     if (viewTab === FACULTY) {
       const f = facultyList.find((x) => String(x.id) === String(selectedFaculty));
       return f ? `Faculty — ${f.label}` : 'Select a faculty member';
@@ -279,6 +285,7 @@ export default function ScheduleBuilder() {
           {viewTab === PROGRAM && (
             <TextField select size="small" fullWidth label="Program" value={selectedProgram}
               onChange={(e) => setSelectedProgram(e.target.value)} SelectProps={{ native: true }}>
+              <option value={ALL_PROGRAMS}>All programs</option>
               {programList.map((p) => <option key={p} value={p}>{p}</option>)}
             </TextField>
           )}
