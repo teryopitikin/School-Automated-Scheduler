@@ -135,6 +135,7 @@ export default function Dashboard() {
   const [exporting, setExporting] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [conflictProgram, setConflictProgram] = useState('');   // '' = all programs
   const navigate = useNavigate();
 
   const loadData = (periodId) => {
@@ -236,6 +237,26 @@ export default function Dashboard() {
       ...p,
       remaining: Math.max((p.total_courses || 0) - (p.scheduled || 0), 0),
     })), [stats]);
+
+  // Conflict pair counts per program. A pair counts for a program when either
+  // side involves one of its sections (cross-program clashes count for both).
+  const conflictsByProgram = useMemo(() => {
+    const programOf = (label) => String(label).substring(0, String(label).lastIndexOf(' '));
+    const counts = {};
+    allPairs.forEach((p) => {
+      const progs = new Set(
+        [...(p.a?.section_names || []), ...(p.b?.section_names || [])]
+          .map(programOf).filter(Boolean));
+      progs.forEach((code) => {
+        const rec = counts[code] || (counts[code] = {
+          program: code, total: 0, room: 0, faculty: 0, section: 0,
+        });
+        rec.total += 1;
+        rec[p.type] += 1;
+      });
+    });
+    return Object.values(counts).sort((a, b) => b.total - a.total);
+  }, [allPairs]);
 
   const facultySorted = useMemo(
     () => [...facultyBreakdown].sort((a, b) => b.total_units - a.total_units),
@@ -409,6 +430,71 @@ export default function Dashboard() {
               {roomUtil.length > 0
                 ? roomChart(roomUtil.slice(0, 12))
                 : <Typography color="text.secondary">No data yet.</Typography>}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Conflicts by program */}
+        <Grid size={12}>
+          <Card>
+            <CardContent>
+              <CardHeader title="Conflicts by Program"
+                caption="click a bar to open that program's timetable"
+                action={(
+                  <TextField select size="small" value={conflictProgram}
+                    onChange={(e) => setConflictProgram(e.target.value)}
+                    SelectProps={{ native: true }} sx={{ minWidth: 170 }}>
+                    <option value="">All programs</option>
+                    {conflictsByProgram.map((p) => (
+                      <option key={p.program} value={p.program}>{p.program}</option>
+                    ))}
+                  </TextField>
+                )} />
+              {conflictsByProgram.length === 0 ? (
+                <Typography color="text.secondary">No conflicts — nothing to chart. 🎉</Typography>
+              ) : (() => {
+                const rows = conflictProgram
+                  ? conflictsByProgram.filter((p) => p.program === conflictProgram)
+                  : conflictsByProgram;
+                return (
+                  <>
+                    {conflictProgram && rows[0] && (
+                      <Box sx={{ display: 'flex', gap: 3, mb: 1.5, flexWrap: 'wrap' }}>
+                        {[['Total', rows[0].total], ['Room', rows[0].room],
+                          ['Faculty', rows[0].faculty], ['Section', rows[0].section]]
+                          .map(([label, v]) => (
+                            <Box key={label}>
+                              <Typography variant="caption" color="text.secondary">{label}</Typography>
+                              <Typography variant="h6" color={v > 0 ? 'error.main' : 'text.primary'}>
+                                {v}
+                              </Typography>
+                            </Box>
+                          ))}
+                      </Box>
+                    )}
+                    <ResponsiveContainer width="100%"
+                      height={Math.max(rows.length * 34 + 60, 140)}>
+                      <BarChart data={rows} layout="vertical" margin={{ left: 20, right: 30 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" allowDecimals={false} />
+                        <YAxis dataKey="program" type="category" width={80} tick={{ fontSize: 11 }} />
+                        <Tooltip />
+                        <Legend />
+                        {[['room', TYPE_LABELS.room, '#ef4444'],
+                          ['faculty', TYPE_LABELS.faculty, '#f97316'],
+                          ['section', TYPE_LABELS.section, '#eab308']].map(([key, name, fill]) => (
+                            <Bar key={key} dataKey={key} name={name} fill={fill} stackId="c"
+                              barSize={14} style={{ cursor: 'pointer' }}
+                              onClick={(d) => {
+                                const code = d?.payload?.program ?? d?.program;
+                                if (code) navigate(`/schedule?program=${encodeURIComponent(code)}`);
+                              }} />
+                          ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         </Grid>

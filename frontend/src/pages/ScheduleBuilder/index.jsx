@@ -48,11 +48,13 @@ export default function ScheduleBuilder() {
   const [moveBlock, setMoveBlock] = useState(null);   // blocked drag-move + its clashes
   const [moving, setMoving] = useState(false);
 
-  // Deep link from the dashboard's Room Capacity card: /schedule?room=<id>
+  // Deep links from dashboard cards: /schedule?room=<id>, /schedule?program=<code>
   const [searchParams] = useSearchParams();
   useEffect(() => {
     const roomParam = searchParams.get('room');
     if (roomParam) { setViewTab(ROOM); setSelectedRoom(roomParam); }
+    const programParam = searchParams.get('program');
+    if (programParam) { setViewTab(PROGRAM); setSelectedProgram(programParam); }
   }, [searchParams]);
 
   const days = config?.operating_days?.length ? config.operating_days : DEFAULT_DAYS;
