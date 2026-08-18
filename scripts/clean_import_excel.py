@@ -9,7 +9,7 @@ import re
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, PatternFill
 
-SRC = '/Users/macbok16-a/Downloads/Consolidated (3) - BSED UPDATED.xlsx'
+SRC = '/Users/macbok16-a/Downloads/Consolidated (1).xlsx'
 OUT = '/Users/macbok16-a/Desktop/import_cleaned.xlsx'
 
 # Manual day fixes for rows whose cell has a time but no weekday.
@@ -18,14 +18,13 @@ MANUAL_DAY = {}
 
 # Other targeted data fixes, keyed by Excel row number.
 MANUAL_SEMESTER = {}
-MANUAL_ROOM = {364: 'Asynchronous'}                  # was blank
+MANUAL_ROOM = {}
 # Replace the raw Time Schedule text for rows with a data-entry error.
 MANUAL_SCHEDULE = {
-    # FS 1 / FS 2 (BSED-ENG-4A): Time Schedule blank in this revision;
+    # FS 1 / FS 2 (BSED-ENG-4A): Time Schedule still blank in this revision;
     # Saturday slots carried over from the Consolidated_1 import.
     95: 'SAT 08:00 AM - 10:00 AM',
     96: 'SAT 10:00 AM - 12:00 NN',
-    316: 'MWF 03:00 PM - 04:00 PM',  # CRIM 5 (3D-WHORL) source typo: was 03:00 AM
 }
 # Subject Code cell errors (copy-paste slips in the source sheet).
 MANUAL_SUBJECT = {321: 'LEA 2'}   # cell literally contained '08:00 AM - 09:00 AM'
@@ -278,7 +277,7 @@ def split_meetings(raw):
 
 # ---------------------------------------------------------------- run
 wb = load_workbook(SRC, data_only=True)
-ws = wb['Sheet1']
+ws = wb[wb.sheetnames[0]]      # 'Sheet1' in the old revisions, 'Consolidated' now
 rows = list(ws.iter_rows(min_row=2, values_only=True))
 
 out = Workbook()
