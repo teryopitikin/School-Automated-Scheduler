@@ -1,8 +1,11 @@
 """Endpoints for the built-in Claude assistant.
 
-POST /assistant/chat/    — one chat turn (runs the tool loop server-side)
-POST /assistant/execute/ — apply one user-approved staged action
+POST /assistant/chat/         — one chat turn (runs the tool loop server-side)
+POST /assistant/execute/      — apply one user-approved staged action
+GET/POST /assistant/config/   — read status / save the API key (persists to .env)
+POST /assistant/config/test/  — verify the stored key against the Claude API
 """
+import os
 import uuid
 
 from django.conf import settings
@@ -18,6 +21,53 @@ from .models import AcademicPeriod, ScheduleEntry
 from .serializers import ScheduleEntrySerializer
 
 
+def _env_path():
+    return getattr(settings, 'ASSISTANT_ENV_PATH', None) or os.path.join(settings.BASE_DIR, '.env')
+
+
+def _config_status():
+    key = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
+    return {'configured': bool(key), 'key_tail': key[-4:] if key else None}
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def assistant_config(request):
+    """Read assistant status or save the Claude API key from the UI.
+
+    The key is persisted to the gitignored .env file (NOT the database —
+    db.sqlite3 is tracked in git) and applied to the running process
+    immediately. The full key is never returned; only its last 4 chars."""
+    if request.method == 'POST':
+        key = (request.data.get('api_key') or '').strip()
+        path = _env_path()
+        lines = []
+        if os.path.exists(path):
+            with open(path) as f:
+                lines = f.read().splitlines()
+        lines = [l for l in lines if not l.startswith('ANTHROPIC_API_KEY=')]
+        lines.append(f'ANTHROPIC_API_KEY={key}')
+        with open(path, 'w') as f:
+            f.write('\n'.join(lines) + '\n')
+        settings.ANTHROPIC_API_KEY = key
+    return Response(_config_status())
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def assistant_config_test(request):
+    """Ping the Claude API with the stored key and report the outcome."""
+    from . import assistant
+
+    if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
+        return Response({'ok': False, 'error': 'No API key configured.'})
+    try:
+        assistant._get_client().models.retrieve(assistant.MODEL)
+        return Response({'ok': True, 'model': assistant.MODEL})
+    except Exception as exc:
+        return Response({'ok': False, 'error': str(exc)})
+
+
 def _tenant_period(request):
     tenant = getattr(request, 'tenant', None) or request.user.tenant
     period = (AcademicPeriod.objects.filter(tenant=tenant, status='ACTIVE').first()
@@ -30,8 +80,8 @@ def _tenant_period(request):
 def assistant_chat(request):
     if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
         return Response(
-            {'detail': 'Claude is not configured — set ANTHROPIC_API_KEY in the '
-                       'backend .env and restart the server.'},
+            {'detail': 'Claude is not configured — add your Anthropic API key in '
+                       'Configuration → Claude Assistant.'},
             status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     message = (request.data.get('message') or '').strip()

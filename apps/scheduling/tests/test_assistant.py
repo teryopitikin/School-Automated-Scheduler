@@ -266,3 +266,87 @@ class TestAssistantChat:
             and m['content'][0].get('type') == 'tool_result'
             for m in data['history']
         )
+
+
+class TestAssistantKeyConfig:
+    @pytest.fixture
+    def env_file(self, settings, tmp_path):
+        p = tmp_path / '.env'
+        p.write_text('SECRET_KEY=x\n')
+        settings.ASSISTANT_ENV_PATH = str(p)
+        settings.ANTHROPIC_API_KEY = ''
+        return p
+
+    def test_get_config_unconfigured(self, api, env_file):
+        resp = api.get('/api/scheduler/assistant/config/')
+        assert resp.status_code == 200
+        assert resp.json() == {'configured': False, 'key_tail': None}
+
+    def test_save_key_persists_and_masks(self, api, env_file, settings):
+        resp = api.post('/api/scheduler/assistant/config/',
+                        {'api_key': 'sk-ant-test-abcd1234'}, format='json')
+        assert resp.status_code == 200
+        assert resp.json() == {'configured': True, 'key_tail': '1234'}
+        # runtime settings updated (no restart needed)
+        assert settings.ANTHROPIC_API_KEY == 'sk-ant-test-abcd1234'
+        # persisted to the env file, existing lines kept
+        text = env_file.read_text()
+        assert 'ANTHROPIC_API_KEY=sk-ant-test-abcd1234' in text
+        assert 'SECRET_KEY=x' in text
+        # GET never returns the full key
+        got = api.get('/api/scheduler/assistant/config/').json()
+        assert got == {'configured': True, 'key_tail': '1234'}
+
+    def test_save_replaces_existing_line(self, api, env_file):
+        env_file.write_text('SECRET_KEY=x\nANTHROPIC_API_KEY=old\n')
+        api.post('/api/scheduler/assistant/config/',
+                 {'api_key': 'sk-new-key-9999'}, format='json')
+        text = env_file.read_text()
+        assert text.count('ANTHROPIC_API_KEY=') == 1
+        assert 'ANTHROPIC_API_KEY=sk-new-key-9999' in text
+
+    def test_clear_key(self, api, env_file, settings):
+        api.post('/api/scheduler/assistant/config/',
+                 {'api_key': 'sk-ant-test-abcd1234'}, format='json')
+        resp = api.post('/api/scheduler/assistant/config/', {'api_key': ''}, format='json')
+        assert resp.json() == {'configured': False, 'key_tail': None}
+        assert settings.ANTHROPIC_API_KEY == ''
+        assert 'ANTHROPIC_API_KEY=\n' in env_file.read_text()
+
+    def test_config_requires_auth(self, env_file):
+        assert APIClient().get('/api/scheduler/assistant/config/').status_code in (401, 403)
+
+    def test_test_connection(self, api, env_file, settings, monkeypatch):
+        settings.ANTHROPIC_API_KEY = 'sk-ant-test'
+
+        class FakeModels:
+            def retrieve(self, model_id):
+                return type('M', (), {'id': model_id})()
+
+        class FakeClient:
+            def __init__(self):
+                self.models = FakeModels()
+
+        from apps.scheduling import assistant
+        monkeypatch.setattr(assistant, '_get_client', lambda: FakeClient())
+        resp = api.post('/api/scheduler/assistant/config/test/', {}, format='json')
+        assert resp.status_code == 200
+        assert resp.json()['ok'] is True
+
+    def test_test_connection_bad_key(self, api, env_file, settings, monkeypatch):
+        settings.ANTHROPIC_API_KEY = 'sk-bad'
+
+        class FakeModels:
+            def retrieve(self, model_id):
+                raise Exception('authentication_error: invalid x-api-key')
+
+        class FakeClient:
+            def __init__(self):
+                self.models = FakeModels()
+
+        from apps.scheduling import assistant
+        monkeypatch.setattr(assistant, '_get_client', lambda: FakeClient())
+        resp = api.post('/api/scheduler/assistant/config/test/', {}, format='json')
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body['ok'] is False and 'invalid' in body['error']

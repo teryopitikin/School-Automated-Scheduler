@@ -30,4 +30,6 @@ urlpatterns = [
     path('export/', export_excel_view, name='export-excel'),
     path('assistant/chat/', assistant_views.assistant_chat, name='assistant-chat'),
     path('assistant/execute/', assistant_views.assistant_execute, name='assistant-execute'),
+    path('assistant/config/', assistant_views.assistant_config, name='assistant-config'),
+    path('assistant/config/test/', assistant_views.assistant_config_test, name='assistant-config-test'),
 ]
