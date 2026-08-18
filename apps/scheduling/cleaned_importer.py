@@ -184,7 +184,10 @@ def import_cleaned(workbook, tenant, period):
             if fac_name and fac_name.upper() != 'TBA':
                 faculty, _ = Faculty.objects.get_or_create(
                     tenant=tenant, name=fac_name,
-                    defaults={'employment_type': 'FULL_TIME', 'max_load_units': 24},
+                    # 999 = effectively no load cap: real per-teacher caps were
+                    # never configured, so a low default only creates noise
+                    # ("overloaded faculty" flags on every full schedule).
+                    defaults={'employment_type': 'FULL_TIME', 'max_load_units': 999},
                 )
 
             room_name = _cell(cells, 'Room Number') or 'TBA'
