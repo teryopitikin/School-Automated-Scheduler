@@ -63,7 +63,7 @@ function layoutDay(entries) {
 
 export default function TimetableGrid({
   entries, days, startHour, endHour, subtitleFor, overloadedFaculty,
-  canAdd, onSlotClick, onEntryClick, onEntryMove,
+  canAdd, onSlotClick, onEntryClick, onEntryMove, addOnTaken = false,
 }) {
   // Zoom via the +/- controls (bottom-right). 100%-300% vertical scale.
   const [zoom, setZoom] = useState(1);
@@ -156,7 +156,10 @@ export default function TimetableGrid({
     const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
     const clickedMin = dayStartMin + y / pxPerMin;
     // Taken (grayed) slots can't be added to — only free time is clickable.
-    if (takenByDay[day]?.some((iv) => clickedMin >= iv.start && clickedMin < iv.end)) return;
+    // Aggregate views (all programs / all sections) set addOnTaken: a busy
+    // band there doesn't mean every section is busy, so adds stay allowed.
+    if (!addOnTaken
+        && takenByDay[day]?.some((iv) => clickedMin >= iv.start && clickedMin < iv.end)) return;
     const hour = startHour + Math.floor(y / hourPx);
     onSlotClick(day, hour);
   };
@@ -231,8 +234,8 @@ export default function TimetableGrid({
               {takenByDay[d]?.map((iv, i) => (
                 <Box key={`taken-${i}`} sx={{
                   position: 'absolute', left: 0, right: 0,
-                  pointerEvents: canAdd ? 'auto' : 'none',
-                  cursor: canAdd ? 'not-allowed' : undefined,
+                  pointerEvents: canAdd && !addOnTaken ? 'auto' : 'none',
+                  cursor: canAdd && !addOnTaken ? 'not-allowed' : undefined,
                   top: (iv.start - dayStartMin) * pxPerMin,
                   height: (iv.end - iv.start) * pxPerMin,
                   bgcolor: (t) => (t.palette.mode === 'dark'
