@@ -155,13 +155,27 @@ export default function TimetableGrid({
     if (!canAdd || !onSlotClick) return;
     const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
     const clickedMin = dayStartMin + y / pxPerMin;
+    const taken = takenByDay[day] || [];
+    const inTaken = taken.some((iv) => clickedMin >= iv.start && clickedMin < iv.end);
     // Taken (grayed) slots can't be added to — only free time is clickable.
     // Aggregate views (all programs / all sections) set addOnTaken: a busy
     // band there doesn't mean every section is busy, so adds stay allowed.
-    if (!addOnTaken
-        && takenByDay[day]?.some((iv) => clickedMin >= iv.start && clickedMin < iv.end)) return;
+    if (!addOnTaken && inTaken) return;
     const hour = startHour + Math.floor(y / hourPx);
-    onSlotClick(day, hour);
+    // Free window around the click, bounded by the neighbouring occupied
+    // intervals — the dialog locks its times to it so the new class can't
+    // overlap what's plotted around it. No window when clicking a busy band.
+    let freeWindow = null;
+    if (!inTaken) {
+      let ws = dayStartMin;
+      let we = endHour * 60;
+      taken.forEach((iv) => {
+        if (iv.end <= clickedMin) ws = Math.max(ws, iv.end);
+        if (iv.start > clickedMin) we = Math.min(we, iv.start);
+      });
+      freeWindow = { start: ws, end: we };
+    }
+    onSlotClick(day, hour, freeWindow);
   };
 
   const ZOOM_STEPS = [1, 1.5, 2, 3];

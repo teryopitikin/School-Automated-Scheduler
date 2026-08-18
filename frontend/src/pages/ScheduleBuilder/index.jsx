@@ -249,7 +249,10 @@ export default function ScheduleBuilder() {
     addPreset = selectedCourse;              // plot the picked unscheduled subject
   }
 
-  const handleSlotClick = (day, hour) => { setAssignSlot({ day, hour }); setAssignOpen(true); };
+  const handleSlotClick = (day, hour, freeWindow = null) => {
+    setAssignSlot({ day, hour, freeWindow });
+    setAssignOpen(true);
+  };
   const handleEntryClick = (entry) => { setEditEntry(entry); setEditOpen(true); };
 
   // Open the edit dialog for any entry by id (used from the conflict drawer,
@@ -514,6 +517,7 @@ export default function ScheduleBuilder() {
         presetRoom={viewTab === ROOM ? selectedRoom : null}
         periodId={activePeriod}
         slotDay={assignSlot.day} slotHour={assignSlot.hour}
+        slotWindow={assignSlot.freeWindow}
         onSaved={() => { reload(); setSelectedCourse(null); }}
       />
 

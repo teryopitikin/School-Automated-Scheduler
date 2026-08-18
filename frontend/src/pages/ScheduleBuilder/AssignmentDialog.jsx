@@ -20,9 +20,19 @@ const prettyConflict = (msg) => String(msg || '').replace(
   (_, h, m) => { const hh = parseInt(h, 10); return `${hh % 12 || 12}:${m} ${hh >= 12 ? 'PM' : 'AM'}`; },
 );
 
+const toMin = (hm) => {
+  const [h, m] = String(hm || '').split(':').map(Number);
+  return Number.isNaN(h) ? null : h * 60 + (m || 0);
+};
+const toHM = (min) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+const pretty = (min) => {
+  const h = Math.floor(min / 60);
+  return `${h % 12 || 12}:${String(min % 60).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+};
+
 export default function AssignmentDialog({
   open, onClose, courses = [], presetCourse, sectionOptions, defaultSection,
-  presetRoom, periodId, slotDay, slotHour, onSaved,
+  presetRoom, periodId, slotDay, slotHour, slotWindow, onSaved,
 }) {
   const [faculty, setFaculty] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -47,17 +57,25 @@ export default function AssignmentDialog({
     });
     setCourseId(presetCourse?.id ? String(presetCourse.id) : '');
     setSectionId(defaultSection ? String(defaultSection) : (sectionOptions?.[0]?.id ? String(sectionOptions[0].id) : ''));
+    // Prefill from the clicked slot, clamped into the free window when one is
+    // set (the gap between the schedules plotted around the click).
+    let start = slotHour != null ? slotHour * 60 : null;
+    let end = start != null ? start + 60 : null;
+    if (start != null && slotWindow) {
+      start = Math.min(Math.max(start, slotWindow.start), slotWindow.end);
+      end = Math.min(start + 60, slotWindow.end);
+    }
     setForm((prev) => ({
       ...prev,
       dayPattern: 'Single',
       customDays: [slotDay],
-      time_start: slotHour != null ? `${String(slotHour).padStart(2, '0')}:00` : '',
-      time_end: slotHour != null ? `${String(slotHour + 1).padStart(2, '0')}:00` : '',
+      time_start: start != null ? toHM(start) : '',
+      time_end: end != null ? toHM(end) : '',
       faculty: '', room: presetRoom ? String(presetRoom) : '',
     }));
     setError('');
     setHardConflicts([]);
-  }, [open, slotDay, slotHour, presetCourse, defaultSection, presetRoom]); // eslint-disable-line
+  }, [open, slotDay, slotHour, slotWindow, presetCourse, defaultSection, presetRoom]); // eslint-disable-line
 
   const courseObj = courses.find((c) => String(c.id) === String(courseId));
   const hasLab = !!courseObj?.has_lab;
@@ -111,7 +129,20 @@ export default function AssignmentDialog({
 
   const lecRooms = rooms.filter((r) => ['LECTURE', 'AVR', 'OTHER'].includes(r.room_type));
   const labRooms = rooms.filter((r) => ['LABORATORY', 'COMPUTER_LAB'].includes(r.room_type));
-  const canSave = courseId && sectionId && form.room && form.time_start && form.time_end;
+
+  // Times must stay inside the clicked slot's free window so the new class
+  // can't overlap the schedules plotted around it.
+  const startMin = toMin(form.time_start);
+  const endMin = toMin(form.time_end);
+  const windowError = (() => {
+    if (!slotWindow || startMin == null || endMin == null) return '';
+    if (startMin < slotWindow.start || endMin > slotWindow.end) {
+      return `Available ${pretty(slotWindow.start)}–${pretty(slotWindow.end)} on ${slotDay} — pick times inside it.`;
+    }
+    if (endMin <= startMin) return 'End time must be after start time.';
+    return '';
+  })();
+  const canSave = courseId && sectionId && form.room && form.time_start && form.time_end && !windowError;
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -184,13 +215,27 @@ export default function AssignmentDialog({
           <Grid size={4}>
             <TextField fullWidth label="Start Time" type="time" value={form.time_start}
               onChange={(e) => setForm({ ...form, time_start: e.target.value })}
+              error={!!windowError}
+              inputProps={slotWindow ? { min: toHM(slotWindow.start), max: toHM(slotWindow.end) } : undefined}
               InputLabelProps={{ shrink: true }} />
           </Grid>
           <Grid size={4}>
             <TextField fullWidth label="End Time" type="time" value={form.time_end}
               onChange={(e) => setForm({ ...form, time_end: e.target.value })}
+              error={!!windowError}
+              inputProps={slotWindow ? { min: toHM(slotWindow.start), max: toHM(slotWindow.end) } : undefined}
               InputLabelProps={{ shrink: true }} />
           </Grid>
+          {slotWindow && (
+            <Grid size={12}>
+              <Typography variant="caption" color={windowError ? 'error' : 'text.secondary'}>
+                {windowError || `Free on ${slotDay}: ${pretty(slotWindow.start)}–${pretty(slotWindow.end)} `
+                  + `(up to ${Math.floor((slotWindow.end - slotWindow.start) / 60)}h`
+                  + `${(slotWindow.end - slotWindow.start) % 60 ? ` ${(slotWindow.end - slotWindow.start) % 60}m` : ''}). `
+                  + 'Times are locked to this window so the class won’t overlap its neighbours.'}
+              </Typography>
+            </Grid>
+          )}
           <Grid size={4}>
             <TextField fullWidth select label="Load Type" value={form.load_classification}
               onChange={(e) => setForm({ ...form, load_classification: e.target.value })}
