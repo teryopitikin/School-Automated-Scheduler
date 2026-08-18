@@ -30,15 +30,28 @@ DAY_ORDER = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
 YEAR_WORDS = {'FIRST': 1, 'SECOND': 2, 'THIRD': 3, 'FOURTH': 4, 'FIFTH': 5}
 
-# Targeted source-data fixes: (course_code) -> replacement code
+# Targeted source-data fixes
 CODE_FIXES = {
     'PROD ED 107': 'PROF ED 107',   # recurring PROD/PROF typo in BSED sheets
 }
+NAME_FIXES = {
+    'JUN CARLO FILEPE': 'JUN CARLO FELIPE',   # BEED 3rd-yr typo
+    'MICUTUAN. E.': 'MICUTUAN, E.',           # stray period
+}
+
+FULLNAME = {
+    'MONDAY': 'MON', 'MON': 'MON',
+    'TUESDAY': 'TUE', 'TUES': 'TUE', 'TUE': 'TUE',
+    'WEDNESDAY': 'WED', 'WED': 'WED',
+    'THURSDAY': 'THU', 'THURS': 'THU', 'THUR': 'THU', 'THU': 'THU', 'TH': 'THU',
+    'FRIDAY': 'FRI', 'FRI': 'FRI',
+    'SATURDAY': 'SAT', 'SAT': 'SAT',
+    'SUNDAY': 'SUN', 'SUN': 'SUN',
+}
 
 
-def parse_day_string(s):
+def _compact_days(s):
     """'MWF' -> ['MON','WED','FRI']; 'TTH' -> ['TUE','THU']; 'MTWTH' etc."""
-    s = re.sub(r'[^A-Z]', '', s.upper())
     out, i = [], 0
     while i < len(s):
         if s[i:i + 3] in ('SAT', 'SUN'):
@@ -49,6 +62,30 @@ def parse_day_string(s):
         if one is None:
             return None
         out.append(one); i += 1
+    return out or None
+
+
+def parse_day_string(s):
+    """'MWF', 'M, T, F', 'Monday', 'MTTH', 'FRI', 'M-F' -> day-code list."""
+    s = s.strip().upper().replace('.', '')
+    # day range like 'M-F' / 'MON-FRI' -> expand across the week
+    m = re.fullmatch(r'([A-Z]+)\s*-\s*([A-Z]+)', s)
+    if m:
+        a = FULLNAME.get(m.group(1)) or (_compact_days(m.group(1)) or [None])[0]
+        b = FULLNAME.get(m.group(2)) or (_compact_days(m.group(2)) or [None])[0]
+        if a in DAY_ORDER and b in DAY_ORDER and DAY_ORDER.index(a) < DAY_ORDER.index(b):
+            return DAY_ORDER[DAY_ORDER.index(a):DAY_ORDER.index(b) + 1]
+    out = []
+    for tok in re.split(r'[,\s&/]+', s):
+        if not tok:
+            continue
+        if tok in FULLNAME:
+            out.append(FULLNAME[tok])
+            continue
+        sub = _compact_days(re.sub(r'[^A-Z]', '', tok))
+        if sub is None:
+            return None
+        out.extend(sub)
     return out or None
 
 
@@ -117,8 +154,10 @@ def clean_cell(text):
 def norm_room(raw):
     raw = clean_cell(raw)
     if re.fullmatch(r'\d+', raw):
-        return f'Room {raw}'
-    return re.sub(r'(?i)^room\b', 'Room', raw)
+        raw = f'Room {raw}'
+    raw = re.sub(r'(?i)^room\b', 'Room', raw)
+    # 'Room 016' / 'Room 07' -> 'Room 16' / 'Room 7' so one room = one record
+    return re.sub(r'^Room 0+(\d)', r'Room \1', raw)
 
 
 def year_from_header(text):
@@ -170,27 +209,46 @@ def convert(src, program, out_path):
             if not code:
                 continue
             code = CODE_FIXES.get(code, code)
-            days = parse_day_string(day_s)
-            rng = parse_time_range(time_s)
+            instr = NAME_FIXES.get(instr, instr)
             section = f'{program}-{year}A'
-            orig = f'{day_s} {time_s}'
-            if not days or not rng:
+            base = dict(room=norm_room(room), instr=instr or 'TBA',
+                        year=f'{ordinal.get(year, year)} Year', section=section)
+
+            # A row can hold several meetings: the DAY and TIME cells pair up
+            # line-by-line (e.g. 'Monday\nTuesday' with '1:00-2:00PM\n9:00-11:00AM').
+            day_lines = [clean_cell(x) for x in cells[0].split('\n') if clean_cell(x)]
+            time_lines = [clean_cell(x) for x in cells[1].split('\n') if clean_cell(x)]
+            if len(day_lines) > 1 and len(day_lines) == len(time_lines):
+                meetings = list(zip(day_lines, time_lines))
+            else:
+                meetings = [(day_s, time_s)]
+
+            parsed = []
+            for d_s, t_s in meetings:
+                days = parse_day_string(d_s)
+                rng = parse_time_range(t_s)
+                if not days or not rng:
+                    parsed = None
+                    break
+                parsed.append((days, rng))
+            orig = ' ; '.join(f'{d} {t}' for d, t in meetings)
+            if parsed is None:
                 n_bad += 1
                 ws.append([code, title, units, SEMESTER, '', '', '', '', '',
-                           norm_room(room), instr or 'TBA', program,
-                           f'{ordinal.get(year, year)} Year', section,
-                           orig, 'UNMATCHED: docx parse', ''])
+                           base['room'], base['instr'], program, base['year'],
+                           section, orig, 'UNMATCHED: docx parse', ''])
                 continue
-            ordered = [d for d in DAY_ORDER if d in days]
-            day_label = '-'.join(DAY_LABEL[d] for d in ordered)
-            start, end = rng
-            ws.append([code, title, units, SEMESTER,
-                       day_label, f'{fmt(start)} - {fmt(end)}',
-                       fmt(start), fmt(end), '',
-                       norm_room(room), instr or 'TBA', program,
-                       f'{ordinal.get(year, year)} Year', section,
-                       orig, 'OK', ''])
-            n_rows += 1
+            multi = len(parsed) > 1
+            for k, (days, (start, end)) in enumerate(parsed, 1):
+                ordered = [d for d in DAY_ORDER if d in days]
+                day_label = '-'.join(DAY_LABEL[d] for d in ordered)
+                ws.append([code, title, units, SEMESTER,
+                           day_label, f'{fmt(start)} - {fmt(end)}',
+                           fmt(start), fmt(end),
+                           f'{k}/{len(parsed)}' if multi else '',
+                           base['room'], base['instr'], program, base['year'],
+                           section, orig, 'OK', ''])
+                n_rows += 1
 
     wb.save(out_path)
     print(f'{os.path.basename(src)} [{program}] -> {out_path}: '
