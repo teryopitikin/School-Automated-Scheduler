@@ -20,7 +20,7 @@ const DEFAULT_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const ALL_SECTIONS = '__ALL__';
 const ALL_PROGRAMS = '__ALL__';
 // lens tab indices
-const SECTION = 0; const PROGRAM = 1; const FACULTY = 2; const ROOM = 3;
+const SECTION = 0; const PROGRAM = 1; const FACULTY = 2; const ROOM = 3; const NOSCHED = 4;
 
 export default function ScheduleBuilder() {
   const [periods, setPeriods] = useState([]);
@@ -182,6 +182,8 @@ export default function ScheduleBuilder() {
   }, [viewTab, programList, facultyList, roomsList]); // eslint-disable-line
 
   const visibleEntries = useMemo(() => {
+    // No-Schedule lens: show everything so vacancies are visible while plotting
+    if (viewTab === NOSCHED) return schedules;
     if (viewTab === SECTION) {
       if (selectedSection === ALL_SECTIONS) return schedules;
       if (selectedSection) return schedules.filter((e) => (e.sections || []).map(String).includes(String(selectedSection)));
@@ -199,13 +201,17 @@ export default function ScheduleBuilder() {
   const subtitleFor = (e) => {
     if (viewTab === FACULTY) return [(e.section_names || []).join(', '), e.room_name].filter(Boolean).join(' · ');
     if (viewTab === ROOM) return [(e.section_names || []).join(', '), e.faculty_name].filter(Boolean).join(' · ');
-    if (viewTab === PROGRAM || selectedSection === ALL_SECTIONS) {
+    if (viewTab === PROGRAM || viewTab === NOSCHED || selectedSection === ALL_SECTIONS) {
       return [(e.section_names || []).join(', '), e.room_name, e.faculty_name].filter(Boolean).join(' · ');
     }
     return [e.room_name, e.faculty_name].filter(Boolean).join(' · ');
   };
 
   const currentTitle = () => {
+    if (viewTab === NOSCHED) {
+      if (selectedCourse) return `Plotting — ${selectedCourse.code}`;
+      return `No schedule — ${unscheduledCourses.length} subject${unscheduledCourses.length === 1 ? '' : 's'} to plot`;
+    }
     if (viewTab === PROGRAM) {
       if (selectedProgram === ALL_PROGRAMS) return 'Program — All programs';
       return selectedProgram ? `Program — ${selectedProgram}` : 'Select a program';
@@ -226,7 +232,8 @@ export default function ScheduleBuilder() {
   // --- add / edit wiring ---
   const canAdd = (viewTab === SECTION)
     || (viewTab === PROGRAM && programSectionOptions.length > 0)
-    || (viewTab === ROOM && !!selectedRoom);
+    || (viewTab === ROOM && !!selectedRoom)
+    || (viewTab === NOSCHED);
   let addSectionOptions = null;
   let addDefaultSection;
   let addPreset = null;
@@ -237,6 +244,9 @@ export default function ScheduleBuilder() {
     addSectionOptions = programSectionOptions;
   } else if (viewTab === ROOM) {
     addSectionOptions = allSectionOptions;   // any section can book the room
+  } else if (viewTab === NOSCHED) {
+    addSectionOptions = allSectionOptions;
+    addPreset = selectedCourse;              // plot the picked unscheduled subject
   }
 
   const handleSlotClick = (day, hour) => { setAssignSlot({ day, hour }); setAssignOpen(true); };
@@ -321,9 +331,14 @@ export default function ScheduleBuilder() {
               {roomsList.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </TextField>
           )}
+          {viewTab === NOSCHED && (
+            <Typography variant="caption" color="text.secondary">
+              Subjects with no schedule this period. Select one, then click a slot to plot it.
+            </Typography>
+          )}
         </Box>
-        {viewTab === SECTION ? (
-          <CourseList courses={courses} schedules={schedules}
+        {viewTab === SECTION || viewTab === NOSCHED ? (
+          <CourseList courses={viewTab === NOSCHED ? unscheduledCourses : courses} schedules={schedules}
             selectedCourse={selectedCourse} onSelectCourse={setSelectedCourse} />
         ) : (
           <Box sx={{ p: 2 }}>
@@ -376,6 +391,7 @@ export default function ScheduleBuilder() {
               <Tab label="Program" sx={{ minHeight: 36, py: 0 }} />
               <Tab label="Faculty" sx={{ minHeight: 36, py: 0 }} />
               <Tab label="Room" sx={{ minHeight: 36, py: 0 }} />
+              <Tab label="No Schedule" sx={{ minHeight: 36, py: 0 }} />
             </Tabs>
             <TextField select size="small" value={activePeriod} sx={{ minWidth: 200 }}
               onChange={(e) => setActivePeriod(e.target.value)} SelectProps={{ native: true }}>
@@ -384,7 +400,7 @@ export default function ScheduleBuilder() {
           </Box>
         </Box>
 
-        {viewTab === SECTION && selectedCourse && selectedSection !== ALL_SECTIONS && (
+        {((viewTab === SECTION && selectedSection !== ALL_SECTIONS) || viewTab === NOSCHED) && selectedCourse && (
           <Box sx={{ mb: 1, p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
               Selected: {selectedCourse.code} — {selectedCourse.title}
@@ -401,7 +417,7 @@ export default function ScheduleBuilder() {
           subtitleFor={subtitleFor}
           overloadedFaculty={overloadedFaculty}
           canAdd={canAdd}
-          addOnTaken={viewTab === PROGRAM || (viewTab === SECTION && selectedSection === ALL_SECTIONS)}
+          addOnTaken={viewTab === PROGRAM || viewTab === NOSCHED || (viewTab === SECTION && selectedSection === ALL_SECTIONS)}
           onSlotClick={handleSlotClick}
           onEntryClick={handleEntryClick}
           onEntryMove={handleEntryMove}
