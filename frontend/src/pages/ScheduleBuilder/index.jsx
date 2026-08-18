@@ -88,6 +88,13 @@ export default function ScheduleBuilder() {
     reload();
   }, [activePeriod]);
 
+  // Refresh after the Claude assistant applies an approved change
+  useEffect(() => {
+    const onChanged = () => reload();
+    window.addEventListener('assistant-data-changed', onChanged);
+    return () => window.removeEventListener('assistant-data-changed', onChanged);
+  }, [activePeriod]); // eslint-disable-line
+
   const reload = async () => {
     if (!activePeriod) return;
     const all = [];

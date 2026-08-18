@@ -13,6 +13,7 @@ import {
 import { logout } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 import { useColorMode } from '../context/ColorModeContext';
+import AssistantDrawer from '../components/AssistantDrawer';
 
 const DRAWER_WIDTH = 264;
 
@@ -163,6 +164,7 @@ export default function AppLayout() {
           <Outlet />
         </Box>
       </Box>
+      <AssistantDrawer />
     </Box>
   );
 }

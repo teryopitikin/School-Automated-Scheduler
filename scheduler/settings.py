@@ -27,6 +27,9 @@ DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
 
+# Claude assistant (leave empty to disable the in-app assistant)
+ANTHROPIC_API_KEY = env('ANTHROPIC_API_KEY', default='')
+
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',

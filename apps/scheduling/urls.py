@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views
+from . import assistant_views, views
 from .views import import_excel_view, export_excel_view
 
 router = DefaultRouter()
@@ -28,4 +28,6 @@ urlpatterns = [
     path('faculty/<int:faculty_pk>/availability/<int:pk>/', faculty_availability_detail, name='faculty-availability-detail'),
     path('import/', import_excel_view, name='import-excel'),
     path('export/', export_excel_view, name='export-excel'),
+    path('assistant/chat/', assistant_views.assistant_chat, name='assistant-chat'),
+    path('assistant/execute/', assistant_views.assistant_execute, name='assistant-execute'),
 ]
