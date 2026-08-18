@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Box, TextField, Typography, Tabs, Tab, Badge, Chip, CircularProgress,
   Dialog, DialogTitle, DialogContent, DialogActions, Button, Alert,
+  Table, TableHead, TableRow, TableCell, TableBody,
 } from '@mui/material';
 import { Warning, EventBusy } from '@mui/icons-material';
 import CourseList from './CourseList';
@@ -210,7 +211,6 @@ export default function ScheduleBuilder() {
 
   const currentTitle = () => {
     if (viewTab === NOSCHED) {
-      if (selectedCourse) return `Plotting — ${selectedCourse.code}`;
       return `No schedule — ${unscheduledCourses.length} subject${unscheduledCourses.length === 1 ? '' : 's'} to plot`;
     }
     if (viewTab === PROGRAM) {
@@ -233,8 +233,7 @@ export default function ScheduleBuilder() {
   // --- add / edit wiring ---
   const canAdd = (viewTab === SECTION)
     || (viewTab === PROGRAM && programSectionOptions.length > 0)
-    || (viewTab === ROOM && !!selectedRoom)
-    || (viewTab === NOSCHED);
+    || (viewTab === ROOM && !!selectedRoom);
   let addSectionOptions = null;
   let addDefaultSection;
   let addPreset = null;
@@ -298,7 +297,8 @@ export default function ScheduleBuilder() {
 
   return (
     <Box sx={{ display: 'flex', height: 'calc(100vh - 120px)', gap: 2 }}>
-      {/* Sidebar */}
+      {/* Sidebar (hidden on the No Schedule page) */}
+      {viewTab !== NOSCHED && (
       <Box sx={{
         width: 260, flexShrink: 0, bgcolor: 'background.paper',
         borderRadius: 2, border: '1px solid', borderColor: 'divider',
@@ -332,14 +332,9 @@ export default function ScheduleBuilder() {
               {roomsList.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </TextField>
           )}
-          {viewTab === NOSCHED && (
-            <Typography variant="caption" color="text.secondary">
-              Subjects with no schedule this period. Select one, then click a slot to plot it.
-            </Typography>
-          )}
         </Box>
-        {viewTab === SECTION || viewTab === NOSCHED ? (
-          <CourseList courses={viewTab === NOSCHED ? unscheduledCourses : courses} schedules={schedules}
+        {viewTab === SECTION ? (
+          <CourseList courses={courses} schedules={schedules}
             selectedCourse={selectedCourse} onSelectCourse={setSelectedCourse} />
         ) : (
           <Box sx={{ p: 2 }}>
@@ -353,6 +348,7 @@ export default function ScheduleBuilder() {
           </Box>
         )}
       </Box>
+      )}
 
       {/* Center grid */}
       <Box sx={{
@@ -401,7 +397,7 @@ export default function ScheduleBuilder() {
           </Box>
         </Box>
 
-        {((viewTab === SECTION && selectedSection !== ALL_SECTIONS) || viewTab === NOSCHED) && selectedCourse && (
+        {viewTab === SECTION && selectedSection !== ALL_SECTIONS && selectedCourse && (
           <Box sx={{ mb: 1, p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
               Selected: {selectedCourse.code} — {selectedCourse.title}
@@ -412,6 +408,43 @@ export default function ScheduleBuilder() {
           </Box>
         )}
 
+        {viewTab === NOSCHED ? (
+          <Box sx={{ flex: 1, overflowY: 'auto' }}>
+            {unscheduledCourses.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: 6 }}>
+                Every subject has a schedule this period.
+              </Typography>
+            ) : (
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700 }}>Code</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Subject Name</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Course</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Teacher</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }} align="right">Units</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {unscheduledCourses.map((c) => (
+                    <TableRow key={c.id} hover sx={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        setSelectedCourse(c);
+                        setAssignSlot({ day: days[0] || 'MON', hour: startHour });
+                        setAssignOpen(true);
+                      }}>
+                      <TableCell sx={{ fontWeight: 600 }}>{c.code}</TableCell>
+                      <TableCell>{c.title}</TableCell>
+                      <TableCell>—</TableCell>
+                      <TableCell>—</TableCell>
+                      <TableCell align="right">{c.total_units || (c.lec_units + c.lab_units)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Box>
+        ) : (
         <TimetableGrid
           entries={visibleEntries} days={days}
           startHour={startHour} endHour={endHour}
@@ -423,6 +456,7 @@ export default function ScheduleBuilder() {
           onEntryClick={handleEntryClick}
           onEntryMove={handleEntryMove}
         />
+        )}
       </Box>
 
       {/* Drag-move blocked by a clash — show it and offer the override */}
