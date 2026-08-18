@@ -222,18 +222,29 @@ def lines(raw):
     return [clean_cell(x) for x in raw.split('\n') if clean_cell(x)]
 
 
-def day_table(tbl, program, em):
+# Known day/time for rows whose DAY/TIME cells are blank in the source,
+# keyed by (program, course code). BSED-ENG FS Saturday slots carried
+# over from the Consolidated_1 registrar sheet.
+MISSING_SCHEDULE = {
+    ('BSED-ENG', 'FS 1'): ('SAT', '8:00-10:00AM'),
+    ('BSED-ENG', 'FS 2'): ('SAT', '10:00-12:00NN'),
+}
+
+
+def day_table(rows_raw, program, em):
     """Format A: banner rows + DAY | TIME | CODE | TITLE | UNITS | ROOM |
-    INSTRUCTOR, one table per year level, no explicit section names."""
+    INSTRUCTOR, one table per year level, no explicit section names.
+    rows_raw: list of rows, each a list of raw cell strings (may hold \\n)."""
     year = None
     in_data = False
-    for row in tbl.rows:
-        cells = [c.text for c in row.cells]
+    for cells in rows_raw:
         texts = [clean_cell(c) for c in cells]
-        if len(set(texts)) == 1:               # merged banner row
-            y = year_from_header(texts[0])
-            if y:
-                year = y
+        uniq = {t for t in texts if t}
+        if len(uniq) <= 1:                     # banner row (merged or sparse)
+            if uniq:
+                y = year_from_header(next(iter(uniq)))
+                if y:
+                    year = y
             continue
         if texts[0].upper() == 'DAY':
             in_data = True
@@ -246,6 +257,9 @@ def day_table(tbl, program, em):
         day_s, time_s, code, title, units, room, instr = texts[:7]
         if not code:
             continue
+        if not day_s and not time_s:
+            day_s, time_s = MISSING_SCHEDULE.get(
+                (program, CODE_FIXES.get(code, code)), ('', ''))
         # DAY and TIME cells pair up line-by-line for split meetings
         day_lines, time_lines = lines(cells[0]), lines(cells[1])
         if len(day_lines) > 1 and len(day_lines) == len(time_lines):
@@ -287,6 +301,8 @@ def columnar_table(tbl, program, em):
 
 
 def convert(src, program, out_path):
+    if src.lower().endswith('.pdf'):
+        return convert_pdf(src, program, out_path)
     doc = docx.Document(src)
     if os.path.exists(out_path):
         wb = load_workbook(out_path)
@@ -307,7 +323,37 @@ def convert(src, program, out_path):
         if 'SUBJECT' in first and 'FROM' in first:
             columnar_table(tbl, program, em)
         elif 'DAY' in headers_flat:
-            day_table(tbl, program, em)
+            day_table([[c.text for c in r.cells] for r in tbl.rows],
+                      program, em)
+    wb.save(out_path)
+    print(f'{os.path.basename(src)} [{program}] -> {out_path}: '
+          f'{em.n_rows} rows written, {em.n_bad} unmatched')
+
+
+def convert_pdf(src, program, out_path):
+    """PDF variant of format A: one day-table per page, extracted with
+    pdfplumber (text_x_tolerance=1 keeps intra-cell spaces)."""
+    import pdfplumber
+
+    if os.path.exists(out_path):
+        wb = load_workbook(out_path)
+        ws = wb['Schedule']
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Schedule'
+        ws.append(HEADERS)
+        for c in ws[1]:
+            c.font = Font(bold=True)
+    em = Emitter(ws)
+    with pdfplumber.open(src) as pdf:
+        for page in pdf.pages:
+            for tbl in page.extract_tables({'text_x_tolerance': 1}):
+                rows_raw = [[c or '' for c in row] for row in tbl]
+                headers_flat = {clean_cell(c).upper()
+                                for row in rows_raw for c in row}
+                if 'DAY' in headers_flat:
+                    day_table(rows_raw, program, em)
     wb.save(out_path)
     print(f'{os.path.basename(src)} [{program}] -> {out_path}: '
           f'{em.n_rows} rows written, {em.n_bad} unmatched')
