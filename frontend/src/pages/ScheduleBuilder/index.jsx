@@ -34,7 +34,6 @@ export default function ScheduleBuilder() {
   const [courses, setCourses] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [conflictCount, setConflictCount] = useState(0);
   const [conflicts, setConflicts] = useState([]);
   const [conflictsLoading, setConflictsLoading] = useState(false);
   const [conflictDrawerOpen, setConflictDrawerOpen] = useState(false);
@@ -111,7 +110,6 @@ export default function ScheduleBuilder() {
       const c = res.data.results ?? res.data;
       const arr = (Array.isArray(c) ? c : []).filter((x) => (x.hard || []).length > 0);
       setConflicts(arr);
-      setConflictCount(arr.length);
     }).catch(() => {}).finally(() => setConflictsLoading(false));
   };
 
@@ -176,6 +174,17 @@ export default function ScheduleBuilder() {
     });
     return [s, e];
   }, [schedules, configStartHour, configEndHour]);
+
+  // Conflicts scoped to the current lens: a specific program selected in the
+  // Program view narrows the badge + drawer to that program's clashes.
+  const visibleConflicts = useMemo(() => {
+    if (viewTab === PROGRAM && selectedProgram && selectedProgram !== ALL_PROGRAMS) {
+      const programOf = (label) => String(label).substring(0, String(label).lastIndexOf(' '));
+      return conflicts.filter((c) =>
+        (c.entry_detail?.section_names || []).some((n) => programOf(n) === selectedProgram));
+    }
+    return conflicts;
+  }, [conflicts, viewTab, selectedProgram]);
 
   // Subjects with no schedule entry in the viewed period
   const unscheduledCourses = useMemo(() => {
@@ -375,8 +384,8 @@ export default function ScheduleBuilder() {
                 <Typography variant="caption" color="text.secondary">Checking conflicts…</Typography>
               </Box>
             )}
-            {!conflictsLoading && conflictCount > 0 && (
-              <Badge badgeContent={conflictCount} color="error" max={99999}
+            {!conflictsLoading && visibleConflicts.length > 0 && (
+              <Badge badgeContent={visibleConflicts.length} color="error" max={99999}
                 sx={{ cursor: 'pointer', '& .MuiBadge-badge': { fontSize: '0.65rem', height: 18, minWidth: 18 } }}
                 onClick={() => setConflictDrawerOpen(true)}>
                 <Warning color="error" />
@@ -536,7 +545,7 @@ export default function ScheduleBuilder() {
       <ConflictDrawer
         onEditEntry={handleEditById}
         open={conflictDrawerOpen} onClose={() => setConflictDrawerOpen(false)}
-        conflicts={conflicts} loading={conflictsLoading} entriesById={entriesById}
+        conflicts={visibleConflicts} loading={conflictsLoading} entriesById={entriesById}
         periodId={activePeriod}
       />
     </Box>
