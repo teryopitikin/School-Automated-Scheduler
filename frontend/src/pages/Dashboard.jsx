@@ -456,12 +456,23 @@ export default function Dashboard() {
                 const rows = conflictProgram
                   ? conflictsByProgram.filter((p) => p.program === conflictProgram)
                   : conflictsByProgram;
+                // Breakdown numbers: the selected program's counts, or the
+                // period-wide unique-pair totals for All programs (summing the
+                // per-program rows would double-count cross-program pairs).
+                const totals = conflictProgram
+                  ? rows[0]
+                  : {
+                    total: allPairs.length,
+                    room: conflictPairs.room?.length ?? 0,
+                    faculty: conflictPairs.faculty?.length ?? 0,
+                    section: conflictPairs.section?.length ?? 0,
+                  };
                 return (
                   <>
-                    {conflictProgram && rows[0] && (
+                    {totals && (
                       <Box sx={{ display: 'flex', gap: 3, mb: 1.5, flexWrap: 'wrap' }}>
-                        {[['Total', rows[0].total], ['Room', rows[0].room],
-                          ['Faculty', rows[0].faculty], ['Section', rows[0].section]]
+                        {[['Total', totals.total], ['Room', totals.room],
+                          ['Faculty', totals.faculty], ['Section', totals.section]]
                           .map(([label, v]) => (
                             <Box key={label}>
                               <Typography variant="caption" color="text.secondary">{label}</Typography>
