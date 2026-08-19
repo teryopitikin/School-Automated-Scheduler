@@ -63,7 +63,7 @@ function layoutDay(entries) {
 
 export default function TimetableGrid({
   entries, days, startHour, endHour, subtitleFor, overloadedFaculty,
-  canAdd, onSlotClick, onEntryClick, onEntryMove, addOnTaken = false,
+  canAdd, onSlotClick, onEntryClick, onEntryMove,
 }) {
   // Zoom via the +/- controls (bottom-right). 100%-300% vertical scale.
   const [zoom, setZoom] = useState(1);
@@ -156,27 +156,20 @@ export default function TimetableGrid({
     const y = evt.clientY - evt.currentTarget.getBoundingClientRect().top;
     const clickedMin = dayStartMin + y / pxPerMin;
     const taken = takenByDay[day] || [];
-    const inTaken = taken.some((iv) => clickedMin >= iv.start && clickedMin < iv.end);
-    // Taken (grayed) slots can't be added to — only free time is clickable.
-    // A slot occupied by a different program's class is never plottable; only
-    // the single-program lens sets addOnTaken (its bands are its OWN classes,
-    // and another of its sections may be free at that time).
-    if (!addOnTaken && inTaken) return;
+    // Taken (grayed) slots are never plottable — only free time is clickable,
+    // regardless of which program/section/room occupies the slot.
+    if (taken.some((iv) => clickedMin >= iv.start && clickedMin < iv.end)) return;
     const hour = startHour + Math.floor(y / hourPx);
     // Free window around the click, bounded by the neighbouring occupied
     // intervals — the dialog locks its times to it so the new class can't
-    // overlap what's plotted around it. No window when clicking a busy band.
-    let freeWindow = null;
-    if (!inTaken) {
-      let ws = dayStartMin;
-      let we = endHour * 60;
-      taken.forEach((iv) => {
-        if (iv.end <= clickedMin) ws = Math.max(ws, iv.end);
-        if (iv.start > clickedMin) we = Math.min(we, iv.start);
-      });
-      freeWindow = { start: ws, end: we };
-    }
-    onSlotClick(day, hour, freeWindow);
+    // overlap what's plotted around it.
+    let ws = dayStartMin;
+    let we = endHour * 60;
+    taken.forEach((iv) => {
+      if (iv.end <= clickedMin) ws = Math.max(ws, iv.end);
+      if (iv.start > clickedMin) we = Math.min(we, iv.start);
+    });
+    onSlotClick(day, hour, { start: ws, end: we });
   };
 
   const ZOOM_STEPS = [1, 1.5, 2, 3];
@@ -249,8 +242,8 @@ export default function TimetableGrid({
               {takenByDay[d]?.map((iv, i) => (
                 <Box key={`taken-${i}`} sx={{
                   position: 'absolute', left: 0, right: 0,
-                  pointerEvents: canAdd && !addOnTaken ? 'auto' : 'none',
-                  cursor: canAdd && !addOnTaken ? 'not-allowed' : undefined,
+                  pointerEvents: canAdd ? 'auto' : 'none',
+                  cursor: canAdd ? 'not-allowed' : undefined,
                   top: (iv.start - dayStartMin) * pxPerMin,
                   height: (iv.end - iv.start) * pxPerMin,
                   bgcolor: (t) => (t.palette.mode === 'dark'
