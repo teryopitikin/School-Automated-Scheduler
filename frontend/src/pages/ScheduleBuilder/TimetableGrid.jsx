@@ -158,8 +158,9 @@ export default function TimetableGrid({
     const taken = takenByDay[day] || [];
     const inTaken = taken.some((iv) => clickedMin >= iv.start && clickedMin < iv.end);
     // Taken (grayed) slots can't be added to — only free time is clickable.
-    // Aggregate views (all programs / all sections) set addOnTaken: a busy
-    // band there doesn't mean every section is busy, so adds stay allowed.
+    // A slot occupied by a different program's class is never plottable; only
+    // the single-program lens sets addOnTaken (its bands are its OWN classes,
+    // and another of its sections may be free at that time).
     if (!addOnTaken && inTaken) return;
     const hour = startHour + Math.floor(y / hourPx);
     // Free window around the click, bounded by the neighbouring occupied

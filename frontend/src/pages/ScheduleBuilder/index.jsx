@@ -472,7 +472,7 @@ export default function ScheduleBuilder() {
           subtitleFor={subtitleFor}
           overloadedFaculty={overloadedFaculty}
           canAdd={canAdd}
-          addOnTaken={viewTab === PROGRAM || (viewTab === SECTION && selectedSection === ALL_SECTIONS)}
+          addOnTaken={viewTab === PROGRAM && selectedProgram !== ALL_PROGRAMS}
           onSlotClick={handleSlotClick}
           onEntryClick={handleEntryClick}
           onEntryMove={handleEntryMove}
