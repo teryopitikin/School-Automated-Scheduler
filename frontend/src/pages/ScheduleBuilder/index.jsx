@@ -143,21 +143,6 @@ export default function ScheduleBuilder() {
       .map((s) => ({ id: s.id, label: sectionLabel(s) })),
     [sections, selectedProgram]);
 
-  // Overloaded faculty (matches backend per-entry unit sum)
-  const OVERLOAD_MAX = 24;
-  const facultyUnits = useMemo(() => {
-    const cu = {};
-    courses.forEach((c) => { cu[c.id] = (Number(c.lec_units) || 0) + (Number(c.lab_units) || 0); });
-    const totals = {};
-    schedules.forEach((e) => { if (e.faculty != null) totals[e.faculty] = (totals[e.faculty] || 0) + (cu[e.course] || 0); });
-    return totals;
-  }, [schedules, courses]);
-  const overloadedFaculty = useMemo(() => {
-    const s = new Set();
-    Object.entries(facultyUnits).forEach(([id, total]) => { if (total > OVERLOAD_MAX) s.add(String(id)); });
-    return s;
-  }, [facultyUnits]);
-
   const entriesById = useMemo(() => {
     const m = {};
     schedules.forEach((e) => { m[e.id] = e; });
@@ -393,10 +378,6 @@ export default function ScheduleBuilder() {
                 <Warning color="error" />
               </Badge>
             )}
-            {viewTab === FACULTY && overloadedFaculty.has(String(selectedFaculty)) && (
-              <Chip size="small" color="error" icon={<Warning />}
-                label={`Overloaded · ${facultyUnits[selectedFaculty]} units (max ${OVERLOAD_MAX})`} />
-            )}
             {unscheduledCourses.length > 0 && (
               <Chip size="small" color="warning" icon={<EventBusy />}
                 label={`${unscheduledCourses.length} unscheduled`}
@@ -470,7 +451,6 @@ export default function ScheduleBuilder() {
           entries={visibleEntries} days={days}
           startHour={startHour} endHour={endHour}
           subtitleFor={subtitleFor}
-          overloadedFaculty={overloadedFaculty}
           canAdd={canAdd}
           onSlotClick={handleSlotClick}
           onEntryClick={handleEntryClick}

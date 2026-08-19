@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { Box, Typography, Tooltip, IconButton } from '@mui/material';
-import { Warning, Add, Remove } from '@mui/icons-material';
+import { Add, Remove } from '@mui/icons-material';
 
 const SNAP_MIN = 30;       // drag-and-drop snaps to half-hour boundaries
 
@@ -62,7 +62,7 @@ function layoutDay(entries) {
 }
 
 export default function TimetableGrid({
-  entries, days, startHour, endHour, subtitleFor, overloadedFaculty,
+  entries, days, startHour, endHour, subtitleFor,
   canAdd, onSlotClick, onEntryClick, onEntryMove,
 }) {
   // Zoom via the +/- controls (bottom-right). 100%-300% vertical scale.
@@ -269,11 +269,10 @@ export default function TimetableGrid({
                 const height = (e.end - e.start) * pxPerMin;
                 const widthPct = 100 / e.lanes;
                 const compact = height < 42;
-                const overloaded = e.faculty != null && overloadedFaculty?.has(String(e.faculty));
                 return (
                   <Tooltip
                     key={e.id}
-                    title={`${e.course_code || ''} — ${e.course_title || ''} · ${fmt(e.start)}–${fmt(e.end)} · ${subtitleFor(e)}${overloaded ? ' · ⚠ faculty overloaded' : ''}`}
+                    title={`${e.course_code || ''} — ${e.course_title || ''} · ${fmt(e.start)}–${fmt(e.end)} · ${subtitleFor(e)}`}
                     arrow
                   >
                     <Box
@@ -293,23 +292,13 @@ export default function TimetableGrid({
                         overflow: 'hidden',
                         cursor: onEntryMove ? 'grab' : (onEntryClick ? 'pointer' : 'default'),
                         '&:active': onEntryMove ? { cursor: 'grabbing' } : undefined,
-                        ...(overloaded && {
-                          boxShadow: '0 0 0 1.5px #ef4444 inset',
-                          bgcolor: '#ef44441a',
-                        }),
                         '&:hover': {
-                          bgcolor: overloaded ? '#ef444433' : `${color}33`, zIndex: 1,
-                          ...(onEntryClick && { boxShadow: `0 0 0 1.5px ${overloaded ? '#ef4444' : color} inset` }),
+                          bgcolor: `${color}33`, zIndex: 1,
+                          ...(onEntryClick && { boxShadow: `0 0 0 1.5px ${color} inset` }),
                         },
                       }}>
-                      {overloaded && (
-                        <Warning sx={{
-                          position: 'absolute', top: 2, right: 2, fontSize: 13, color: '#ef4444',
-                        }} />
-                      )}
                       <Typography noWrap sx={{
                         fontSize: '0.7rem', fontWeight: 700, color, lineHeight: 1.2,
-                        pr: overloaded ? 1.5 : 0,
                       }}>
                         {e.course_code || `Course ${e.course}`}
                       </Typography>
