@@ -188,6 +188,20 @@ export default function ScheduleBuilder() {
     return conflicts;
   }, [conflicts, viewTab, selectedProgram]);
 
+  // Per-program conflict counts (same counting as the scoped badge: entries
+  // with hard conflicts, attributed to each program of their sections).
+  const conflictsPerProgram = useMemo(() => {
+    const programOf = (label) => String(label).substring(0, String(label).lastIndexOf(' '));
+    const counts = {};
+    conflicts.forEach((c) => {
+      const progs = new Set(
+        (c.entry_detail?.section_names || []).map(programOf).filter(Boolean));
+      progs.forEach((p) => { counts[p] = (counts[p] || 0) + 1; });
+    });
+    return Object.entries(counts).map(([program, count]) => ({ program, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [conflicts]);
+
   // Subjects with no schedule entry in the viewed period
   const unscheduledCourses = useMemo(() => {
     const used = new Set(schedules.map((e) => e.course));
@@ -366,6 +380,25 @@ export default function ScheduleBuilder() {
               {visibleEntries.length} class{visibleEntries.length === 1 ? '' : 'es'} this week.
               {canAdd ? ' Click an empty slot to add; click a class to edit.' : ' Click a class to edit.'}
             </Typography>
+            {viewTab === PROGRAM && selectedProgram === ALL_PROGRAMS && conflictsPerProgram.length > 0 && (
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="caption" sx={{ fontWeight: 700, color: 'error.main' }}>
+                  Conflicts by program
+                </Typography>
+                {conflictsPerProgram.map(({ program, count }) => (
+                  <Box key={program} onClick={() => setSelectedProgram(program)}
+                    sx={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      py: 0.4, px: 0.5, borderRadius: 1, cursor: 'pointer',
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}>
+                    <Typography variant="body2">{program}</Typography>
+                    <Chip size="small" color="error" label={count}
+                      sx={{ height: 20, fontSize: '0.7rem' }} />
+                  </Box>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
       </Box>
