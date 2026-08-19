@@ -485,10 +485,14 @@ export default function Dashboard() {
                     )}
                     <ResponsiveContainer width="100%"
                       height={Math.max(rows.length * 34 + 60, 140)}>
-                      <BarChart data={rows} layout="vertical" margin={{ left: 20, right: 30 }}>
+                      <BarChart data={rows} layout="vertical" margin={{ left: 20, right: 56 }}>
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis type="number" allowDecimals={false} />
-                        <YAxis dataKey="program" type="category" width={80} tick={{ fontSize: 11 }} />
+                        <YAxis dataKey="program" type="category" width={112} tick={{ fontSize: 11 }}
+                          tickFormatter={(code) => {
+                            const r = conflictsByProgram.find((p) => p.program === code);
+                            return r ? `${code} (${r.total})` : code;
+                          }} />
                         <Tooltip />
                         <Legend />
                         {[['room', TYPE_LABELS.room, '#ef4444'],
@@ -499,7 +503,11 @@ export default function Dashboard() {
                               onClick={(d) => {
                                 const code = d?.payload?.program ?? d?.program;
                                 if (code) navigate(`/schedule?program=${encodeURIComponent(code)}`);
-                              }} />
+                              }}>
+                              <LabelList dataKey={key} position="center"
+                                formatter={(v) => (v > 0 ? v : '')}
+                                style={{ fontSize: 10, fill: '#fff', fontWeight: 700 }} />
+                            </Bar>
                           ))}
                       </BarChart>
                     </ResponsiveContainer>
