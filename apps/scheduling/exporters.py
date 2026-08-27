@@ -138,7 +138,6 @@ def export_conflicts(tenant, period):
 
     TYPE_LABELS = {
         'faculty': 'Faculty double-booked',
-        'room': 'Room double-booked',
         'section': 'Section overlap',
     }
 

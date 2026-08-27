@@ -3,7 +3,7 @@ import {
   Drawer, Box, Typography, IconButton, Chip, Divider, CircularProgress, Button,
 } from '@mui/material';
 import {
-  Close, Person, MeetingRoom, Groups, TrendingUp, ErrorOutline, FileDownload,
+  Close, Person, Groups, TrendingUp, ErrorOutline, FileDownload,
 } from '@mui/icons-material';
 import { exportExcel } from '../../api/importExport';
 
@@ -13,7 +13,6 @@ const DAY_LABELS = {
 
 const TYPE_META = {
   faculty: { label: 'Faculty double-booked', Icon: Person },
-  room: { label: 'Room double-booked', Icon: MeetingRoom },
   section: { label: 'Section overlap', Icon: Groups },
   overload: { label: 'Faculty overload', Icon: TrendingUp },
 };

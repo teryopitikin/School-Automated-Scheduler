@@ -92,8 +92,9 @@ class TestDetectConflicts:
         assert result['hard'] == []
         assert result['warnings'] == []
 
-    def test_room_conflict(self, tenant, period, course, course2, faculty, room, section):
-        """Same room + day + EXACT same time + different subject = conflict."""
+    def test_room_double_booking_ignored(self, tenant, period, course, course2, faculty, room, section):
+        """Same room + day + EXACT same time, different teacher/section — rooms
+        can be shared, so this is NOT a conflict."""
         make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
 
         faculty2 = Faculty.objects.create(
@@ -107,11 +108,11 @@ class TestDetectConflicts:
         )
         entry2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (8, 0), (10, 0), [sec2])
         result = detect_conflicts(entry2)
-        assert len(result['hard']) == 1
-        assert result['hard'][0]['type'] == 'room'
+        assert result['hard'] == []
 
-    def test_room_conflict_partial_overlap(self, tenant, period, course, course2, faculty, room, section):
-        """Same room, times PARTIALLY overlapping — flagged."""
+    def test_room_partial_overlap_ignored(self, tenant, period, course, course2, faculty, room, section):
+        """Same room, times partially overlapping, no shared teacher/section —
+        not a conflict."""
         make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
         faculty2 = Faculty.objects.create(
             tenant=tenant, name='Dr. Jones', employment_type='FULL_TIME',
@@ -119,7 +120,7 @@ class TestDetectConflicts:
         )
         entry2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0))
         result = detect_conflicts(entry2)
-        assert any(c['type'] == 'room' for c in result['hard'])
+        assert result['hard'] == []
 
     def test_no_conflict_touching_boundaries(self, tenant, period, course, course2, faculty, room, section):
         """Back-to-back classes (8-10 then 10-12) share a boundary, not time."""
@@ -194,9 +195,9 @@ class TestDetectConflicts:
         result = detect_conflicts(entry2)
         assert [c['type'] for c in result['hard']] == ['section']
 
-    def test_same_slot_is_conflict_regardless_of_subject(self, tenant, period, course, faculty, room, section):
-        """Same room + day + exact time is a conflict even for the SAME subject
-        (subject is not a parameter)."""
+    def test_same_room_same_faculty_is_faculty_clash(self, tenant, period, course, faculty, room, section):
+        """Same teacher twice in the same room at the same time: the room is
+        fine (double booking ignored) but the TEACHER is still double-booked."""
         prog2 = Program.objects.create(tenant=tenant, code='BSF', name='BSF')
         sec2 = Section.objects.create(
             tenant=tenant, program=prog2, academic_period=period,
@@ -206,7 +207,19 @@ class TestDetectConflicts:
         entry2 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [sec2])
         result = detect_conflicts(entry2)
         assert len(result['hard']) == 1
-        assert result['hard'][0]['type'] == 'room'
+        assert result['hard'][0]['type'] == 'faculty'
+
+    def test_same_room_same_section_is_section_clash(self, tenant, period, course, course2, faculty, room, section):
+        """A section sitting in two overlapping classes in the SAME room is
+        still a section clash even though the room itself is ignored."""
+        faculty2 = Faculty.objects.create(
+            tenant=tenant, name='Dr. Jones', employment_type='FULL_TIME',
+            priority_level=3, max_load_units=24,
+        )
+        make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        entry2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0), [section])
+        result = detect_conflicts(entry2)
+        assert [h['type'] for h in result['hard']] == ['section']
 
     def test_no_conflict_different_day(self, tenant, period, course, course2, faculty, room, section):
         make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
@@ -262,9 +275,9 @@ class TestAnalyzePeriodBulk:
             tenant=tenant, program=prog2, academic_period=period,
             year_level=1, section_number=1,
         )
-        # room clash (partial overlap), faculty clash, section clash, boundary no-clash
+        # same-room overlap (ignored), faculty clash, section clash, boundary no-clash
         e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
-        e2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0), [sec2])   # room clash w/ e1
+        e2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0), [sec2])   # same room as e1 — no clash
         e3 = make_entry(tenant, period, course2, faculty, room2, 'MON', (9, 30), (10, 30), [sec2])  # faculty clash w/ e1
         e4 = make_entry(tenant, period, course2, faculty2, room2, 'MON', (11, 0), (12, 0), [sec2])  # section clash w/ e2? no (11-12 vs 9-11 boundary) -> none
         e5 = make_entry(tenant, period, course, faculty2, room2, 'TUE', (8, 0), (9, 0), [section])
@@ -322,10 +335,11 @@ class TestAsynchronousExemption:
 
     def test_physical_conflicts_still_detected(
             self, tenant, period, course, course2, faculty, room, async_room, section):
-        """The exemption must not swallow real physical clashes."""
+        """The exemption must not swallow real physical clashes (same teacher
+        double-booked; the shared room itself is ignored)."""
         e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
         e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
-        assert any(h['type'] == 'room' for h in detect_conflicts(e1)['hard'])
+        assert any(h['type'] == 'faculty' for h in detect_conflicts(e1)['hard'])
 
     def test_analyze_period_matches_per_entry(
             self, tenant, period, course, course2, faculty, room, async_room, section):
@@ -337,7 +351,7 @@ class TestAsynchronousExemption:
         )
         e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
         e2 = make_entry(tenant, period, course2, faculty, async_room, 'MON', (8, 0), (10, 0), [section])
-        e3 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0))  # real room clash w/ e1
+        e3 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0))  # same room as e1 — no clash
         bulk = analyze_period(tenant, period)
         assert bulk[e2.pk]['hard'] == []
         for e in (e1, e2, e3):
@@ -401,11 +415,11 @@ class TestPlaceholderRoomExemption:
         assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['section']
         assert [h['type'] for h in detect_conflicts(e2)['hard']] == ['section']
 
-    def test_physical_room_conflicts_unaffected(
+    def test_physical_room_overlap_also_ignored(
             self, tenant, period, course, course2, faculty, faculty2, room):
         e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0))
         e2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0))
-        assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['room']
+        assert detect_conflicts(e1)['hard'] == []
 
     def test_analyze_period_matches_per_entry(
             self, tenant, period, course, course2, faculty, faculty2, room, na_room, section):

@@ -7,7 +7,7 @@ import {
 } from '@mui/material';
 import {
   MenuBook, CheckCircle, Warning, Person, TrendingUp, OpenInFull, Close, FileDownload,
-  MeetingRoom, Groups,
+  Groups,
 } from '@mui/icons-material';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
@@ -23,7 +23,7 @@ import { fetchAcademicPeriods } from '../api/academicPeriods';
 
 const DAY_LABELS = { MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri', SAT: 'Sat', SUN: 'Sun' };
 const TYPE_LABELS = {
-  faculty: 'Faculty double-booked', room: 'Room double-booked', section: 'Section overlap',
+  faculty: 'Faculty double-booked', section: 'Section overlap',
 };
 const OVERLOAD_MAX = 24;
 
@@ -281,10 +281,6 @@ export default function Dashboard() {
       onClick: () => setExpanded('conflicts'),
     },
     {
-      icon: <MeetingRoom />, label: TYPE_LABELS.room, color: 'error.main',
-      value: conflictPairs.room?.length ?? 0, onClick: () => setExpanded('type:room'),
-    },
-    {
       icon: <Person />, label: TYPE_LABELS.faculty, color: 'error.main',
       value: conflictPairs.faculty?.length ?? 0, onClick: () => setExpanded('type:faculty'),
     },
@@ -495,8 +491,7 @@ export default function Dashboard() {
                           }} />
                         <Tooltip />
                         <Legend />
-                        {[['room', TYPE_LABELS.room, '#ef4444'],
-                          ['faculty', TYPE_LABELS.faculty, '#f97316'],
+                        {[['faculty', TYPE_LABELS.faculty, '#f97316'],
                           ['section', TYPE_LABELS.section, '#eab308']].map(([key, name, fill]) => (
                             <Bar key={key} dataKey={key} name={name} fill={fill} stackId="c"
                               barSize={14} style={{ cursor: 'pointer' }}
@@ -627,7 +622,7 @@ export default function Dashboard() {
       </FullScreenDialog>
 
       {/* Per-type conflict dialogs — the clashing schedules stacked in pairs */}
-      {['room', 'faculty', 'section'].map((type) => (
+      {['faculty', 'section'].map((type) => (
         <FullScreenDialog key={type} open={expanded === `type:${type}`}
           onClose={() => setExpanded(null)}
           title={TYPE_LABELS[type]}

@@ -130,7 +130,6 @@ class TestConflictsEndpointDetails:
         sec2 = Section.objects.create(tenant=tenant, program=prog, academic_period=period,
                                       year_level=2, section_number=1)
         f1 = Faculty.objects.create(tenant=tenant, name='CRUZ, A', employment_type='FULL_TIME')
-        f2 = Faculty.objects.create(tenant=tenant, name='REYES, B', employment_type='FULL_TIME')
         room = Room.objects.create(tenant=tenant, name='Room 15', room_type='LECTURE', capacity=40)
 
         e1 = ScheduleEntry.objects.create(
@@ -139,7 +138,7 @@ class TestConflictsEndpointDetails:
             group_id=uuid.uuid4())
         e1.sections.set([sec1])
         e2 = ScheduleEntry.objects.create(
-            tenant=tenant, academic_period=period, course=c2, faculty=f2, room=room,
+            tenant=tenant, academic_period=period, course=c2, faculty=f1, room=room,
             day_of_week='MON', time_start=datetime.time(8, 30), time_end=datetime.time(9, 30),
             group_id=uuid.uuid4())
         e2.sections.set([sec2])
@@ -162,7 +161,7 @@ class TestConflictsEndpointDetails:
         assert other['id'] == e2.pk
         assert other['course_code'] == 'GE 102'
         assert other['section_names'] == ['BSIT 2-1']
-        assert other['faculty_name'] == 'REYES, B'
+        assert other['faculty_name'] == 'CRUZ, A'
         assert other['room_name'] == 'Room 15'
         assert other['day_of_week'] == 'MON'
         assert other['time_start'] == '08:30:00'

@@ -191,7 +191,7 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         """Create schedule entries for one or more days.
 
-        A HARD conflict (same day + overlapping time on the same room, faculty,
+        A HARD conflict (same day + overlapping time on the same faculty
         or section) blocks the add — nothing is saved. A soft warning such as
         faculty overload does NOT block; the class is still added. Pass
         ``allow_conflicts: true`` to force-save past a hard conflict.
@@ -345,7 +345,7 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='free-rooms')
     def free_rooms(self, request, pk=None):
         """Rooms with no class overlapping this entry's day/time — candidates
-        for resolving a room double-booking. Same room-type as the entry's
+        when reassigning the entry's room. Same room-type as the entry's
         current room ranks first; the entry's own room is excluded."""
         entry = self.get_object()
         busy_room_ids = set(
