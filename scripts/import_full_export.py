@@ -162,7 +162,7 @@ def main():
                 skipped.append({'id': _id, 'reason': f'bad time {start}-{end}'})
                 continue
 
-            labels = [s.strip() for s in str(secs or '').split('+') if s.strip()]
+            labels = [s.strip() for s in re.split(r'[+,]', str(secs or '')) if s.strip()]
             entry_sections = []
             for label in labels:
                 sec = sections.get(label)
