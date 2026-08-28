@@ -25,8 +25,26 @@ def _env_path():
     return getattr(settings, 'ASSISTANT_ENV_PATH', None) or os.path.join(settings.BASE_DIR, '.env')
 
 
-def _config_status():
+def _load_key():
+    """The configured API key, surviving multi-worker deployments: the
+    worker that saved the key updated its own settings, but sibling
+    gunicorn workers still hold the boot-time value — so an empty
+    in-memory key falls back to the .env file the save persisted to."""
     key = getattr(settings, 'ANTHROPIC_API_KEY', '') or ''
+    if not key:
+        path = _env_path()
+        if os.path.exists(path):
+            with open(path) as f:
+                for line in f.read().splitlines():
+                    if line.startswith('ANTHROPIC_API_KEY='):
+                        key = line.split('=', 1)[1].strip()
+        if key:
+            settings.ANTHROPIC_API_KEY = key
+    return key
+
+
+def _config_status():
+    key = _load_key()
     return {'configured': bool(key), 'key_tail': key[-4:] if key else None}
 
 
@@ -59,7 +77,7 @@ def assistant_config_test(request):
     """Ping the Claude API with the stored key and report the outcome."""
     from . import assistant
 
-    if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
+    if not _load_key():
         return Response({'ok': False, 'error': 'No API key configured.'})
     try:
         assistant._get_client().models.retrieve(assistant.MODEL)
@@ -78,7 +96,7 @@ def _tenant_period(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def assistant_chat(request):
-    if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
+    if not _load_key():
         return Response(
             {'detail': 'Claude is not configured — add your Anthropic API key in '
                        'Configuration → Claude Assistant.'},

@@ -212,8 +212,10 @@ class TestAssistantChat:
         resp = APIClient().post('/api/scheduler/assistant/chat/', {'message': 'hi'}, format='json')
         assert resp.status_code in (401, 403)
 
-    def test_chat_without_api_key_returns_503(self, api, settings):
+    def test_chat_without_api_key_returns_503(self, api, settings, tmp_path):
         settings.ANTHROPIC_API_KEY = ''
+        # isolate the .env fallback from the developer's real .env
+        settings.ASSISTANT_ENV_PATH = str(tmp_path / '.env')
         resp = api.post('/api/scheduler/assistant/chat/', {'message': 'hi'}, format='json')
         assert resp.status_code == 503
 
@@ -315,6 +317,37 @@ class TestAssistantKeyConfig:
 
     def test_config_requires_auth(self, env_file):
         assert APIClient().get('/api/scheduler/assistant/config/').status_code in (401, 403)
+
+    def test_other_worker_reads_key_from_env_file(self, api, env_file, settings,
+                                                  monkeypatch):
+        """Prod runs several gunicorn workers: the worker that saved the key
+        updated its own settings, but a sibling worker still has the empty
+        boot-time value. It must fall back to the key persisted in .env."""
+        env_file.write_text('SECRET_KEY=x\nANTHROPIC_API_KEY=sk-ant-from-file\n')
+        settings.ANTHROPIC_API_KEY = ''   # simulates the sibling worker
+
+        seen = {}
+
+        class FakeModels:
+            def retrieve(self, model_id):
+                return type('M', (), {'id': model_id})()
+
+        class FakeClient:
+            def __init__(self):
+                self.models = FakeModels()
+
+        from apps.scheduling import assistant
+        monkeypatch.setattr(assistant, '_get_client',
+                            lambda: seen.setdefault('client', FakeClient()))
+
+        resp = api.post('/api/scheduler/assistant/config/test/')
+        assert resp.json()['ok'] is True
+
+    def test_other_worker_status_reads_env_file(self, api, env_file, settings):
+        env_file.write_text('SECRET_KEY=x\nANTHROPIC_API_KEY=sk-ant-tail-5678\n')
+        settings.ANTHROPIC_API_KEY = ''
+        got = api.get('/api/scheduler/assistant/config/').json()
+        assert got == {'configured': True, 'key_tail': '5678'}
 
     def test_test_connection(self, api, env_file, settings, monkeypatch):
         settings.ANTHROPIC_API_KEY = 'sk-ant-test'
