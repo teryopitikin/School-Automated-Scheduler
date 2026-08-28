@@ -8,10 +8,11 @@ import {
   Dashboard as DashboardIcon,
   CalendarMonth, School, Business, MenuBook, Person,
   MeetingRoom, Settings, Assessment, UploadFile,
-  Menu as MenuIcon, Logout, EventNote, DarkMode, LightMode,
+  Menu as MenuIcon, Logout, EventNote, DarkMode, LightMode, Group,
 } from '@mui/icons-material';
 import { logout } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
+import { isAdmin } from '../utils/permissions';
 import { useColorMode } from '../context/ColorModeContext';
 import AssistantDrawer from '../components/AssistantDrawer';
 
@@ -42,6 +43,7 @@ const menuSections = [
       { label: 'Configuration', path: '/config', icon: <Settings /> },
       { label: 'Reports', path: '/reports', icon: <Assessment /> },
       { label: 'Import / Export', path: '/import-export', icon: <UploadFile /> },
+      { label: 'Users', path: '/users', icon: <Group />, adminOnly: true },
     ],
   },
 ];
@@ -81,7 +83,9 @@ export default function AppLayout() {
               {section.title}
             </Typography>
             <List disablePadding>
-              {section.items.map((item) => {
+              {section.items
+                .filter((item) => !item.adminOnly || isAdmin(user))
+                .map((item) => {
                 const isActive = location.pathname === item.path;
                 return (
                   <ListItemButton

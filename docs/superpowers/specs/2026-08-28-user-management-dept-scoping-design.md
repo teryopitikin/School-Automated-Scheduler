@@ -100,6 +100,22 @@ is_active. New users get the admin's tenant. `/auth/me/` now returns
   affordances anywhere. Backend still enforces regardless.
 - Conflicts drawer/dashboard need no client filtering — server scopes.
 
+## Addendum (added during build, user request)
+
+- Assignments extended beyond programs: a DEPT_HEAD can also be assigned
+  **departments** (scope = entries whose course belongs to the
+  department) and **courses** (scope = entries of that course). An entry
+  is editable when it matches ANY assignment dimension. Fields:
+  `managed_department_codes`, `managed_course_codes` (JSON code lists,
+  same wipe-survival rationale). Multiple values per user on all three.
+- **Metadata import** (admin-only): `POST /api/scheduler/import-metadata/`
+  upserts Departments / Programs / Courses from a workbook containing any
+  subset of those sheets, matched by code; never touches the schedule.
+  Third card on the Import/Export page.
+- **Wipe current schedule** (admin-only): `POST /api/scheduler/wipe-schedule/`
+  with a type-WIPE confirm card (this was already in the main spec).
+- Full-export import card uses a type-REPLACE confirm.
+
 ## Testing (TDD)
 
 - Permission matrix: role × create/move/edit/delete × own/foreign/

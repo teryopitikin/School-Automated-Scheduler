@@ -2,7 +2,9 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from . import assistant_views, views
-from .views import import_excel_view, export_excel_view
+from .views import (import_excel_view, export_excel_view,
+                    import_full_export_view, import_metadata_view,
+                    wipe_schedule_view)
 
 router = DefaultRouter()
 router.register(r'academic-periods', views.AcademicPeriodViewSet, basename='academic-period')
@@ -27,6 +29,9 @@ urlpatterns = [
     path('faculty/<int:faculty_pk>/availability/', faculty_availability_list, name='faculty-availability-list'),
     path('faculty/<int:faculty_pk>/availability/<int:pk>/', faculty_availability_detail, name='faculty-availability-detail'),
     path('import/', import_excel_view, name='import-excel'),
+    path('import-full-export/', import_full_export_view, name='import-full-export'),
+    path('import-metadata/', import_metadata_view, name='import-metadata'),
+    path('wipe-schedule/', wipe_schedule_view, name='wipe-schedule'),
     path('export/', export_excel_view, name='export-excel'),
     path('assistant/chat/', assistant_views.assistant_chat, name='assistant-chat'),
     path('assistant/execute/', assistant_views.assistant_execute, name='assistant-execute'),

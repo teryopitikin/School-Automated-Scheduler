@@ -16,6 +16,8 @@ import { fetchSchedules, fetchSchedule, fetchConflicts, patchSchedule } from '..
 import { fetchSections } from '../../api/sections';
 import { fetchAcademicPeriods } from '../../api/academicPeriods';
 import { fetchConfig } from '../../api/config';
+import { useAuth } from '../../context/AuthContext';
+import { canEditEntry, canPlot } from '../../utils/permissions';
 
 const DEFAULT_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const ALL_SECTIONS = '__ALL__';
@@ -24,6 +26,7 @@ const ALL_PROGRAMS = '__ALL__';
 const SECTION = 0; const PROGRAM = 1; const FACULTY = 2; const ROOM = 3; const NOSCHED = 4;
 
 export default function ScheduleBuilder() {
+  const { user } = useAuth();
   const [periods, setPeriods] = useState([]);
   const [activePeriod, setActivePeriod] = useState('');
   const [sections, setSections] = useState([]);
@@ -234,9 +237,10 @@ export default function ScheduleBuilder() {
   };
 
   // --- add / edit wiring ---
-  const canAdd = (viewTab === SECTION)
+  const plotAllowed = canPlot(user);
+  const canAdd = plotAllowed && ((viewTab === SECTION)
     || (viewTab === PROGRAM && programSectionOptions.length > 0)
-    || (viewTab === ROOM && !!selectedRoom);
+    || (viewTab === ROOM && !!selectedRoom));
   let addSectionOptions = null;
   let addDefaultSection;
   let addPreset = null;
@@ -455,6 +459,7 @@ export default function ScheduleBuilder() {
           onSlotClick={handleSlotClick}
           onEntryClick={handleEntryClick}
           onEntryMove={handleEntryMove}
+          editableFor={(e) => canEditEntry(user, e)}
         />
         )}
       </Box>

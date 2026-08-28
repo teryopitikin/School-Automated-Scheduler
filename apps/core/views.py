@@ -35,3 +35,24 @@ def current_user_view(request):
 @permission_classes([AllowAny])
 def csrf_view(request):
     return Response({'csrfToken': get_token(request)})
+
+
+from rest_framework import viewsets
+
+from .models import User
+from .permissions import IsAdminRole
+from .serializers import ManageUserSerializer
+
+
+class UserViewSet(viewsets.ModelViewSet):
+    """Admin-only user management. No hard delete — deactivate via
+    is_active=false instead."""
+    serializer_class = ManageUserSerializer
+    permission_classes = [IsAuthenticated, IsAdminRole]
+    http_method_names = ['get', 'post', 'put', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        return User.objects.filter(tenant=self.request.user.tenant).order_by('username')
+
+    def perform_create(self, serializer):
+        serializer.save(tenant=self.request.user.tenant)

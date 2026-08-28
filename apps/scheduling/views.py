@@ -3,6 +3,10 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, parser_classes, permission_classes
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
+
+from apps.core.permissions import (
+    IsAdminRole, ScheduleEntryPermission, entry_in_scope, head_scope,
+)
 from rest_framework.response import Response
 
 from apps.core.mixins import TenantQuerySetMixin
@@ -181,6 +185,7 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
         'course', 'faculty', 'room', 'academic_period',
     ).prefetch_related('sections').all()
     serializer_class = ScheduleEntrySerializer
+    permission_classes = [IsAuthenticated, ScheduleEntryPermission]
     filterset_fields = ['academic_period', 'faculty', 'room', 'day_of_week', 'entry_type', 'group_id']
     ordering_fields = ['day_of_week', 'time_start']
 
@@ -384,7 +389,7 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
             )
         entries = list(
             self.get_queryset().filter(academic_period_id=period_id)
-            .select_related('course', 'faculty', 'room')
+            .select_related('course__department', 'faculty', 'room')
             .prefetch_related('sections__program')
         )
 
@@ -417,6 +422,20 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
                     'entry_detail': briefs[entry.pk],
                     **result,
                 })
+
+        # Department heads only see conflicts involving their assignments
+        # (programs/departments/courses): their own entries, plus foreign
+        # entries clashing with theirs.
+        scope = head_scope(request.user)
+        if scope is not None:
+            mine = {e.pk for e in entries if entry_in_scope(e, scope)}
+            all_conflicts = [
+                item for item in all_conflicts
+                if item['entry_id'] in mine or any(
+                    (h.get('other') or {}).get('id') in mine
+                    for h in item['hard']
+                )
+            ]
         return Response(all_conflicts)
 
     @action(detail=False, methods=['post'])
@@ -491,7 +510,7 @@ class ScheduleConfigViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsAdminRole])
 @parser_classes([MultiPartParser])
 def import_excel_view(request):
     import openpyxl
@@ -520,6 +539,83 @@ def import_excel_view(request):
 
     result = import_cleaned(wb, tenant, period)
     return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+@parser_classes([MultiPartParser])
+def import_full_export_view(request):
+    """Wipe-and-replace import of a full-export workbook (the app's own
+    export format: metadata sheets + All Entries). Admin only."""
+    import openpyxl
+
+    from .full_export_importer import import_full_export, missing_sheets
+
+    file = request.FILES.get('file')
+    period_id = request.data.get('academic_period')
+    if not file:
+        return Response({'detail': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not period_id:
+        return Response({'detail': 'academic_period is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    tenant = getattr(request, 'tenant', None) or request.user.tenant
+    try:
+        period = AcademicPeriod.objects.get(pk=period_id, tenant=tenant)
+    except AcademicPeriod.DoesNotExist:
+        return Response({'detail': 'Academic period not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        wb = openpyxl.load_workbook(file, read_only=True)
+    except Exception:
+        return Response({'detail': 'Invalid Excel file.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    missing = missing_sheets(wb)
+    if missing:
+        return Response(
+            {'detail': f'Not a full-export workbook — missing sheets: {", ".join(missing)}.'},
+            status=status.HTTP_400_BAD_REQUEST)
+
+    result = import_full_export(wb, tenant, period)
+    return Response(result, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+@parser_classes([MultiPartParser])
+def import_metadata_view(request):
+    """Upsert Departments / Programs / Courses from a workbook containing
+    any subset of those sheets. Never touches the schedule. Admin only."""
+    import openpyxl
+
+    from .metadata_importer import METADATA_SHEETS, import_metadata
+
+    file = request.FILES.get('file')
+    if not file:
+        return Response({'detail': 'No file uploaded.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        wb = openpyxl.load_workbook(file, read_only=True)
+    except Exception:
+        return Response({'detail': 'Invalid Excel file.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not any(s in wb.sheetnames for s in METADATA_SHEETS):
+        return Response(
+            {'detail': 'No Departments, Programs or Courses sheet found.'},
+            status=status.HTTP_400_BAD_REQUEST)
+
+    tenant = getattr(request, 'tenant', None) or request.user.tenant
+    return Response(import_metadata(wb, tenant), status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def wipe_schedule_view(request):
+    """Delete ALL scheduling data for the tenant (entries, sections,
+    courses, faculty, rooms, programs, departments). Users, academic
+    periods and config survive. Admin only."""
+    from .full_export_importer import wipe_schedule
+
+    tenant = getattr(request, 'tenant', None) or request.user.tenant
+    wiped = wipe_schedule(tenant)
+    return Response({'wiped': wiped})
 
 
 @api_view(['GET'])

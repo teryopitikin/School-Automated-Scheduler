@@ -14,6 +14,8 @@ import Configuration from './pages/Configuration';
 import Reports from './pages/Reports';
 import ImportExport from './pages/ImportExport';
 import ScheduleBuilder from './pages/ScheduleBuilder';
+import Users from './pages/Users';
+import { isAdmin } from './utils/permissions';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -42,6 +44,7 @@ export default function App() {
         <Route path="/config" element={<Configuration />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/import-export" element={<ImportExport />} />
+        {isAdmin(user) && <Route path="/users" element={<Users />} />}
       </Route>
     </Routes>
   );

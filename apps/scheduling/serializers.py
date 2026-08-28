@@ -83,6 +83,8 @@ class RoomSerializer(serializers.ModelSerializer):
 class ScheduleEntrySerializer(serializers.ModelSerializer):
     course_code = serializers.CharField(source='course.code', read_only=True)
     course_title = serializers.CharField(source='course.title', read_only=True)
+    course_department_code = serializers.CharField(
+        source='course.department.code', read_only=True, default='')
     faculty_name = serializers.CharField(source='faculty.name', read_only=True, default='TBA')
     room_name = serializers.CharField(source='room.name', read_only=True)
     section_names = serializers.SerializerMethodField()
@@ -91,6 +93,7 @@ class ScheduleEntrySerializer(serializers.ModelSerializer):
         model = ScheduleEntry
         fields = [
             'id', 'academic_period', 'course', 'course_code', 'course_title',
+            'course_department_code',
             'faculty', 'faculty_name', 'room', 'room_name',
             'sections', 'section_names',
             'day_of_week', 'time_start', 'time_end',

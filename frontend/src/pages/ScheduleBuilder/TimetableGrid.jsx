@@ -64,6 +64,7 @@ function layoutDay(entries) {
 export default function TimetableGrid({
   entries, days, startHour, endHour, subtitleFor,
   canAdd, onSlotClick, onEntryClick, onEntryMove,
+  editableFor,   // (entry) => bool; entries failing it render read-only
 }) {
   // Zoom via the +/- controls (bottom-right). 100%-300% vertical scale.
   const [zoom, setZoom] = useState(1);
@@ -269,6 +270,9 @@ export default function TimetableGrid({
                 const height = (e.end - e.start) * pxPerMin;
                 const widthPct = 100 / e.lanes;
                 const compact = height < 42;
+                const editable = editableFor ? editableFor(e) : true;
+                const clickable = editable && !!onEntryClick;
+                const draggable = editable && !!onEntryMove;
                 return (
                   <Tooltip
                     key={e.id}
@@ -276,9 +280,9 @@ export default function TimetableGrid({
                     arrow
                   >
                     <Box
-                      onClick={(evt) => { evt.stopPropagation(); onEntryClick?.(e); }}
-                      draggable={!!onEntryMove}
-                      onDragStart={(evt) => handleDragStart(e, evt)}
+                      onClick={(evt) => { evt.stopPropagation(); if (clickable) onEntryClick(e); }}
+                      draggable={draggable}
+                      onDragStart={(evt) => { if (draggable) handleDragStart(e, evt); }}
                       onDragEnd={handleDragEnd}
                       sx={{
                         position: 'absolute',
@@ -290,11 +294,11 @@ export default function TimetableGrid({
                         borderRadius: '4px',
                         px: 0.6, py: compact ? 0.1 : 0.4,
                         overflow: 'hidden',
-                        cursor: onEntryMove ? 'grab' : (onEntryClick ? 'pointer' : 'default'),
-                        '&:active': onEntryMove ? { cursor: 'grabbing' } : undefined,
+                        cursor: draggable ? 'grab' : (clickable ? 'pointer' : 'default'),
+                        '&:active': draggable ? { cursor: 'grabbing' } : undefined,
                         '&:hover': {
                           bgcolor: `${color}33`, zIndex: 1,
-                          ...(onEntryClick && { boxShadow: `0 0 0 1.5px ${color} inset` }),
+                          ...(clickable && { boxShadow: `0 0 0 1.5px ${color} inset` }),
                         },
                       }}>
                       <Typography noWrap sx={{

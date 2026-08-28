@@ -107,10 +107,27 @@ def assistant_chat(request):
 def assistant_execute(request):
     """Apply one staged action after user approval. Same conflict rules as the
     manual flows: hard clashes block unless allow_conflicts is passed."""
+    from apps.core.permissions import create_allowed, user_can_edit_entry
+
     action = request.data.get('action') or {}
     payload = action.get('payload') or {}
     allow = bool(request.data.get('allow_conflicts'))
     tenant, _ = _tenant_period(request)
+
+    # Same role rules as the manual endpoints: admins/registrars edit
+    # anything; department heads only their assignments; viewers nothing.
+    denied = Response(
+        {'detail': 'You can only modify classes of your own department.'},
+        status=status.HTTP_403_FORBIDDEN)
+    if action.get('type') == 'add_class':
+        if not create_allowed(request.user, payload.get('sections') or [],
+                              payload.get('course')):
+            return denied
+    elif action.get('type') in ('move_class', 'delete_class'):
+        target = ScheduleEntry.objects.filter(
+            tenant=tenant, pk=payload.get('entry_id')).first()
+        if target is not None and not user_can_edit_entry(request.user, target):
+            return denied
 
     if action.get('type') == 'add_class':
         group = uuid.uuid4()

@@ -75,7 +75,7 @@ def section(tenant, period):
 @pytest.fixture
 def user(tenant):
     return User.objects.create_user(
-        username='admin', password='admin', tenant=tenant,
+        username='admin', password='admin', tenant=tenant, role='ADMIN',
     )
 
 
