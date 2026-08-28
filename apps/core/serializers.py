@@ -25,10 +25,12 @@ class LoginSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     tenant_id = serializers.IntegerField(source='tenant.pk', read_only=True, default=None)
     tenant_name = serializers.CharField(source='tenant.name', read_only=True, default='')
+    full_name = serializers.CharField(source='get_full_name', read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'role', 'managed_program_codes',
+        fields = ['id', 'username', 'email', 'first_name', 'last_name',
+                  'full_name', 'role', 'managed_program_codes',
                   'managed_department_codes', 'managed_course_codes',
                   'tenant_id', 'tenant_name', 'is_active']
         read_only_fields = fields
@@ -42,7 +44,8 @@ class ManageUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'role',
+        fields = ['id', 'username', 'email', 'first_name', 'last_name',
+                  'password', 'role',
                   'managed_program_codes', 'managed_department_codes',
                   'managed_course_codes', 'is_active']
 

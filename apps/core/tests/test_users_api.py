@@ -100,3 +100,36 @@ class TestMe:
         assert resp.status_code == 200
         assert resp.data['role'] == 'DEPT_HEAD'
         assert resp.data['managed_program_codes'] == ['BEED']
+
+
+class TestFullName:
+    def test_create_with_names(self, admin_client):
+        resp = admin_client.post('/api/scheduler/users/', {
+            'username': 'mcruz', 'password': 'Secret123', 'role': 'REGISTRAR',
+            'first_name': 'Maria', 'last_name': 'Cruz',
+        }, format='json')
+        assert resp.status_code == 201, resp.data
+        assert resp.data['first_name'] == 'Maria'
+        assert resp.data['last_name'] == 'Cruz'
+        u = User.objects.get(username='mcruz')
+        assert u.get_full_name() == 'Maria Cruz'
+
+    def test_update_names(self, admin_client, head):
+        resp = admin_client.patch(f'/api/scheduler/users/{head.pk}/', {
+            'first_name': 'Juan', 'last_name': 'Dela Cruz',
+        }, format='json')
+        assert resp.status_code == 200
+        head.refresh_from_db()
+        assert head.first_name == 'Juan'
+        assert head.last_name == 'Dela Cruz'
+
+    def test_me_includes_names(self, head):
+        head.first_name = 'Juan'
+        head.last_name = 'Dela Cruz'
+        head.save()
+        from rest_framework.test import APIClient
+        c = APIClient()
+        c.force_authenticate(user=head)
+        resp = c.get('/api/scheduler/auth/me/')
+        assert resp.data['first_name'] == 'Juan'
+        assert resp.data['full_name'] == 'Juan Dela Cruz'

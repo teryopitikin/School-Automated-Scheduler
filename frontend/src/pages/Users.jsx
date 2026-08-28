@@ -21,6 +21,7 @@ const ROLES = [
 
 const EMPTY_FORM = {
   username: '', email: '', password: '', role: 'VIEWER',
+  first_name: '', last_name: '',
   managed_program_codes: [], managed_department_codes: [],
   managed_course_codes: [], is_active: true,
 };
@@ -61,6 +62,7 @@ export default function Users() {
     setEditing(row);
     setForm({
       username: row.username, email: row.email || '', password: '',
+      first_name: row.first_name || '', last_name: row.last_name || '',
       role: row.role,
       managed_program_codes: row.managed_program_codes || [],
       managed_department_codes: row.managed_department_codes || [],
@@ -107,6 +109,10 @@ export default function Users() {
 
   const columns = [
     { field: 'username', headerName: 'Username', flex: 1, minWidth: 130 },
+    {
+      field: 'full_name', headerName: 'Name', flex: 1.2, minWidth: 150,
+      valueGetter: (_, row) => [row.first_name, row.last_name].filter(Boolean).join(' '),
+    },
     { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 160 },
     {
       field: 'role', headerName: 'Role', width: 160,
@@ -168,6 +174,12 @@ export default function Users() {
           <TextField label="Username" value={form.username} size="small"
             onChange={(e) => setForm({ ...form, username: e.target.value })}
             disabled={!!editing} />
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <TextField label="First name" value={form.first_name} size="small" fullWidth
+              onChange={(e) => setForm({ ...form, first_name: e.target.value })} />
+            <TextField label="Last name" value={form.last_name} size="small" fullWidth
+              onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+          </Box>
           <TextField label="Email" value={form.email} size="small"
             onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <TextField
