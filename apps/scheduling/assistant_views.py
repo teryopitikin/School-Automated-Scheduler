@@ -102,18 +102,37 @@ def assistant_chat(request):
                        'Configuration → Claude Assistant.'},
             status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
+    import json
+
+    from .assistant_files import AttachmentError, build_attachment_blocks
+
     message = (request.data.get('message') or '').strip()
     if not message:
         return Response({'detail': 'message is required.'},
                         status=status.HTTP_400_BAD_REQUEST)
     history = request.data.get('history') or []
+    if isinstance(history, str):   # multipart sends history as a JSON string
+        try:
+            history = json.loads(history or '[]')
+        except ValueError:
+            history = []
+
+    attachments = None
+    if request.FILES.get('file'):
+        try:
+            attachments = build_attachment_blocks(request.FILES['file'])
+        except AttachmentError as exc:
+            return Response({'detail': str(exc)},
+                            status=status.HTTP_400_BAD_REQUEST)
+
     tenant, period = _tenant_period(request)
     if period is None:
         return Response({'detail': 'No academic period exists yet.'},
                         status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        reply, new_history, actions = run_chat(history, message, tenant, period)
+        reply, new_history, actions = run_chat(history, message, tenant, period,
+                                               attachments=attachments)
     except Exception as exc:
         return Response({'detail': f'Claude request failed: {exc}'},
                         status=status.HTTP_502_BAD_GATEWAY)

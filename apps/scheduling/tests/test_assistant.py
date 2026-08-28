@@ -383,3 +383,114 @@ class TestAssistantKeyConfig:
         assert resp.status_code == 200
         body = resp.json()
         assert body['ok'] is False and 'invalid' in body['error']
+
+
+class TestAssistantAttachments:
+    """Files attached in the chat UI: spreadsheets are parsed to CSV text,
+    PDFs/images are passed to Claude natively, junk is rejected."""
+
+    @pytest.fixture
+    def fake_client(self, settings, monkeypatch):
+        settings.ANTHROPIC_API_KEY = 'test-key'
+        calls = []
+
+        class FakeBlock:
+            def __init__(self, **kw):
+                self.__dict__.update(kw)
+
+            def model_dump(self):
+                return dict(self.__dict__)
+
+        class FakeMessages:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                return type('R', (), {
+                    'content': [FakeBlock(type='text', text='Looked at your file.')],
+                    'stop_reason': 'end_turn'})()
+
+        class FakeClient:
+            def __init__(self):
+                self.beta = type('B', (), {'messages': FakeMessages()})()
+
+        from apps.scheduling import assistant
+        monkeypatch.setattr(assistant, '_get_client', lambda: FakeClient())
+        return calls
+
+    def _first_user_content(self, calls):
+        return calls[0]['messages'][0]['content']
+
+    def test_xlsx_parsed_to_text(self, api, period, fake_client):
+        import io
+
+        import openpyxl
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Sheet1'
+        ws.append(['Course', 'Teacher'])
+        ws.append(['CrSc 1', 'CRUZ, A'])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = 'schedule.xlsx'
+
+        resp = api.post('/api/scheduler/assistant/chat/',
+                        {'message': 'what is in this file?', 'file': buf},
+                        format='multipart')
+        assert resp.status_code == 200, resp.content
+        content = self._first_user_content(fake_client)
+        assert isinstance(content, list)
+        text_blob = ' '.join(b['text'] for b in content if b['type'] == 'text')
+        assert 'CrSc 1' in text_blob and 'CRUZ, A' in text_blob
+        assert 'schedule.xlsx' in text_blob
+        assert 'what is in this file?' in text_blob
+
+    def test_pdf_becomes_document_block(self, api, period, fake_client):
+        import base64
+        import io
+        pdf = io.BytesIO(b'%PDF-1.4 fake')
+        pdf.name = 'loading.pdf'
+        resp = api.post('/api/scheduler/assistant/chat/',
+                        {'message': 'summarize', 'file': pdf}, format='multipart')
+        assert resp.status_code == 200, resp.content
+        content = self._first_user_content(fake_client)
+        doc = next(b for b in content if b['type'] == 'document')
+        assert doc['source']['media_type'] == 'application/pdf'
+        assert base64.b64decode(doc['source']['data']).startswith(b'%PDF')
+
+    def test_image_becomes_image_block(self, api, period, fake_client):
+        import io
+        png = io.BytesIO(b'\x89PNG\r\n\x1a\nfake')
+        png.name = 'shot.png'
+        resp = api.post('/api/scheduler/assistant/chat/',
+                        {'message': 'what is this?', 'file': png}, format='multipart')
+        assert resp.status_code == 200, resp.content
+        content = self._first_user_content(fake_client)
+        img = next(b for b in content if b['type'] == 'image')
+        assert img['source']['media_type'] == 'image/png'
+
+    def test_unsupported_type_rejected(self, api, period, fake_client):
+        import io
+        exe = io.BytesIO(b'MZ')
+        exe.name = 'virus.exe'
+        resp = api.post('/api/scheduler/assistant/chat/',
+                        {'message': 'run this', 'file': exe}, format='multipart')
+        assert resp.status_code == 400
+        assert fake_client == []
+
+    def test_oversize_rejected(self, api, period, fake_client, monkeypatch):
+        import io
+
+        from apps.scheduling import assistant_files
+        monkeypatch.setattr(assistant_files, 'MAX_UPLOAD_BYTES', 10)
+        pdf = io.BytesIO(b'%PDF-1.4 this is more than ten bytes')
+        pdf.name = 'big.pdf'
+        resp = api.post('/api/scheduler/assistant/chat/',
+                        {'message': 'summarize', 'file': pdf}, format='multipart')
+        assert resp.status_code == 400
+        assert fake_client == []
+
+    def test_plain_chat_still_string_content(self, api, period, fake_client):
+        resp = api.post('/api/scheduler/assistant/chat/',
+                        {'message': 'hello'}, format='json')
+        assert resp.status_code == 200
+        assert self._first_user_content(fake_client) == 'hello'

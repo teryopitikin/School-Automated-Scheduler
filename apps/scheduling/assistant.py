@@ -414,18 +414,25 @@ def _get_client():
     return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 
-def run_chat(history, user_message, tenant, period):
+def run_chat(history, user_message, tenant, period, attachments=None):
     """One user turn: run the tool loop until Claude produces a final answer.
 
     Returns (reply_text, new_history, staged_actions). history is the opaque
     message list from the previous response — content blocks are preserved
     verbatim (thinking blocks must be echoed back unchanged on this model).
+    attachments: optional list of content blocks (from assistant_files) sent
+    ahead of the user's text in the same message.
     """
     import json
 
     client = _get_client()
     messages = list(history or [])
-    messages.append({'role': 'user', 'content': user_message})
+    if attachments:
+        messages.append({'role': 'user',
+                         'content': [*attachments,
+                                     {'type': 'text', 'text': user_message}]})
+    else:
+        messages.append({'role': 'user', 'content': user_message})
     staged = []
 
     for _ in range(MAX_TOOL_ROUNDS):

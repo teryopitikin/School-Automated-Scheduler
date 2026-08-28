@@ -3,7 +3,7 @@ import {
   Box, Drawer, Fab, Typography, TextField, IconButton, CircularProgress,
   Paper, Button, Alert, Chip,
 } from '@mui/material';
-import { AutoAwesome, Send, Close } from '@mui/icons-material';
+import { AutoAwesome, Send, Close, AttachFile } from '@mui/icons-material';
 import { assistantChat, assistantExecute } from '../api/assistant';
 
 // Chat with Claude about the schedule. Write actions Claude stages arrive as
@@ -16,7 +16,9 @@ export default function AssistantDrawer() {
   const [chat, setChat] = useState([]);       // {role: 'user'|'claude'|'error', text}
   const [history, setHistory] = useState([]); // opaque API message history
   const [actions, setActions] = useState([]); // staged actions awaiting approval
+  const [file, setFile] = useState(null);     // pending attachment
   const scrollRef = useRef(null);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -25,11 +27,14 @@ export default function AssistantDrawer() {
   const send = async () => {
     const message = input.trim();
     if (!message || busy) return;
+    const attachment = file;
     setInput('');
-    setChat((c) => [...c, { role: 'user', text: message }]);
+    setFile(null);
+    if (fileRef.current) fileRef.current.value = '';
+    setChat((c) => [...c, { role: 'user', text: message, fileName: attachment?.name }]);
     setBusy(true);
     try {
-      const res = await assistantChat({ message, history });
+      const res = await assistantChat({ message, history, file: attachment });
       setHistory(res.data.history);
       setChat((c) => [...c, { role: 'claude', text: res.data.reply || '(no reply)' }]);
       if (res.data.actions?.length) {
@@ -105,6 +110,10 @@ export default function AssistantDrawer() {
                   color: m.role === 'user' ? 'primary.contrastText' : 'text.primary',
                   borderRadius: 2,
                 }}>
+                  {m.fileName && (
+                    <Chip size="small" icon={<AttachFile />} label={m.fileName}
+                      sx={{ mb: 0.5, bgcolor: 'rgba(255,255,255,0.2)', color: 'inherit' }} />
+                  )}
                   {m.text}
                 </Paper>
               )
@@ -148,7 +157,20 @@ export default function AssistantDrawer() {
           )}
         </Box>
 
-        <Box sx={{ p: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', gap: 1 }}>
+        <Box sx={{ p: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+          {file && (
+            <Chip size="small" icon={<AttachFile />} label={file.name}
+              onDelete={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}
+              sx={{ mb: 1, maxWidth: '100%' }} />
+          )}
+          <Box sx={{ display: 'flex', gap: 1 }}>
+          <input type="file" ref={fileRef} style={{ display: 'none' }}
+            accept=".xlsx,.xls,.csv,.txt,.pdf,.png,.jpg,.jpeg,.gif,.webp"
+            onChange={(e) => setFile(e.target.files?.[0] || null)} />
+          <IconButton onClick={() => fileRef.current?.click()} disabled={busy}
+            title="Attach a file (Excel, CSV, PDF, image)">
+            <AttachFile />
+          </IconButton>
           <TextField fullWidth size="small" placeholder="Ask Claude…" value={input}
             multiline maxRows={4}
             onChange={(e) => setInput(e.target.value)}
@@ -158,6 +180,7 @@ export default function AssistantDrawer() {
           <IconButton color="primary" onClick={send} disabled={busy || !input.trim()}>
             <Send />
           </IconButton>
+          </Box>
         </Box>
       </Drawer>
     </>
