@@ -133,3 +133,49 @@ class TestFullName:
         resp = c.get('/api/scheduler/auth/me/')
         assert resp.data['first_name'] == 'Juan'
         assert resp.data['full_name'] == 'Juan Dela Cruz'
+
+
+class TestChangePassword:
+    """Every role can change their OWN password at /auth/change-password/,
+    proving the current one first; the session survives the change."""
+
+    def _client_and_user(self, tenant, role='VIEWER'):
+        u = User.objects.create_user(
+            username=f'u_{role.lower()}', password='oldpass', tenant=tenant, role=role)
+        c = APIClient()
+        c.force_authenticate(user=u)
+        return c, u
+
+    @pytest.mark.parametrize('role', ['ADMIN', 'REGISTRAR', 'DEPT_HEAD', 'VIEWER'])
+    def test_all_roles_can_change_own_password(self, tenant, role):
+        c, u = self._client_and_user(tenant, role)
+        resp = c.post('/api/scheduler/auth/change-password/', {
+            'current_password': 'oldpass', 'new_password': 'NewPass99',
+        }, format='json')
+        assert resp.status_code == 200, resp.data
+        u.refresh_from_db()
+        assert u.check_password('NewPass99')
+
+    def test_wrong_current_password_rejected(self, tenant):
+        c, u = self._client_and_user(tenant)
+        resp = c.post('/api/scheduler/auth/change-password/', {
+            'current_password': 'WRONG', 'new_password': 'NewPass99',
+        }, format='json')
+        assert resp.status_code == 400
+        u.refresh_from_db()
+        assert u.check_password('oldpass')
+
+    def test_short_new_password_rejected(self, tenant):
+        c, u = self._client_and_user(tenant)
+        resp = c.post('/api/scheduler/auth/change-password/', {
+            'current_password': 'oldpass', 'new_password': 'abc',
+        }, format='json')
+        assert resp.status_code == 400
+        u.refresh_from_db()
+        assert u.check_password('oldpass')
+
+    def test_requires_auth(self):
+        resp = APIClient().post('/api/scheduler/auth/change-password/', {
+            'current_password': 'x', 'new_password': 'NewPass99',
+        }, format='json')
+        assert resp.status_code in (401, 403)

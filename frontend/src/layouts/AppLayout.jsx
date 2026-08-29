@@ -3,14 +3,15 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Drawer, List, ListItemButton, ListItemIcon, ListItemText,
   Typography, Divider, IconButton, AppBar, Toolbar, Avatar, Menu, MenuItem,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Alert,
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
   CalendarMonth, School, Business, MenuBook, Person,
   MeetingRoom, Settings, Assessment, UploadFile,
-  Menu as MenuIcon, Logout, EventNote, DarkMode, LightMode, Group,
+  Menu as MenuIcon, Logout, EventNote, DarkMode, LightMode, Group, LockReset,
 } from '@mui/icons-material';
-import { logout } from '../api/auth';
+import { logout, changePassword } from '../api/auth';
 import { useAuth } from '../context/AuthContext';
 import { isAdmin } from '../utils/permissions';
 import { useColorMode } from '../context/ColorModeContext';
@@ -55,6 +56,37 @@ export default function AppLayout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [pwError, setPwError] = useState('');
+  const [pwDone, setPwDone] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
+
+  const openPwDialog = () => {
+    setAnchorEl(null);
+    setPwForm({ current: '', next: '', confirm: '' });
+    setPwError('');
+    setPwDone(false);
+    setPwOpen(true);
+  };
+
+  const submitPassword = async () => {
+    if (pwForm.next !== pwForm.confirm) {
+      setPwError('New passwords do not match.');
+      return;
+    }
+    setPwBusy(true);
+    setPwError('');
+    try {
+      await changePassword({ current_password: pwForm.current, new_password: pwForm.next });
+      setPwDone(true);
+      setTimeout(() => setPwOpen(false), 1200);
+    } catch (err) {
+      setPwError(err.response?.data?.detail || 'Failed to change password.');
+    } finally {
+      setPwBusy(false);
+    }
+  };
 
   const handleLogout = async () => {
     setAnchorEl(null);
@@ -157,6 +189,10 @@ export default function AppLayout() {
                 <Typography variant="body2">{user?.username}</Typography>
               </MenuItem>
               <Divider />
+              <MenuItem onClick={openPwDialog}>
+                <ListItemIcon><LockReset fontSize="small" /></ListItemIcon>
+                Change Password
+              </MenuItem>
               <MenuItem onClick={handleLogout}>
                 <ListItemIcon><Logout fontSize="small" /></ListItemIcon>
                 Logout
@@ -169,6 +205,31 @@ export default function AppLayout() {
         </Box>
       </Box>
       <AssistantDrawer />
+
+      <Dialog open={pwOpen} onClose={() => setPwOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Change Password</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '12px !important' }}>
+          {pwDone && <Alert severity="success">Password changed.</Alert>}
+          {pwError && <Alert severity="error">{pwError}</Alert>}
+          <TextField label="Current password" type="password" size="small" autoFocus
+            value={pwForm.current}
+            onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} />
+          <TextField label="New password (min 6 characters)" type="password" size="small"
+            value={pwForm.next}
+            onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })} />
+          <TextField label="Confirm new password" type="password" size="small"
+            value={pwForm.confirm}
+            onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitPassword(); }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPwOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={submitPassword}
+            disabled={pwBusy || pwDone || !pwForm.current || pwForm.next.length < 6 || !pwForm.confirm}>
+            Change
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

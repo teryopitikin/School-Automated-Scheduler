@@ -37,6 +37,27 @@ def csrf_view(request):
     return Response({'csrfToken': get_token(request)})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    """Any logged-in user changes their OWN password; the current one must
+    be proven first. The session survives the change."""
+    from django.contrib.auth import update_session_auth_hash
+
+    current = request.data.get('current_password') or ''
+    new = request.data.get('new_password') or ''
+    if not request.user.check_password(current):
+        return Response({'detail': 'Current password is incorrect.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if len(new) < 6:
+        return Response({'detail': 'New password must be at least 6 characters.'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    request.user.set_password(new)
+    request.user.save(update_fields=['password'])
+    update_session_auth_hash(request, request.user)
+    return Response({'detail': 'Password changed.'})
+
+
 from rest_framework import viewsets
 
 from .models import User
