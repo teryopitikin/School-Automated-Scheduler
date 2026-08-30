@@ -7,6 +7,8 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import { Edit, Delete, ContentCopy } from '@mui/icons-material';
 import PageHeader from '../components/PageHeader';
+import { useAuth } from '../context/AuthContext';
+import { canEditSchedule, isDeptHead } from '../utils/permissions';
 import ConfirmDialog from '../components/ConfirmDialog';
 import {
   fetchAcademicPeriods, createAcademicPeriod, updateAcademicPeriod,
@@ -17,6 +19,8 @@ const SEMESTERS = ['1ST', '2ND', 'SUMMER'];
 const STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED'];
 
 export default function AcademicPeriods() {
+  const { user } = useAuth();
+  const canWrite = canEditSchedule(user);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -105,18 +109,18 @@ export default function AcademicPeriods() {
     {
       field: 'actions', headerName: 'Actions', width: 140, sortable: false,
       renderCell: ({ row }) => (
-        <>
+        canWrite ? <>
           <IconButton size="small" onClick={() => setCloneSource(row)} title="Clone"><ContentCopy fontSize="small" /></IconButton>
           <IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton>
           <IconButton size="small" color="error" onClick={() => setDeleteTarget(row)}><Delete fontSize="small" /></IconButton>
-        </>
+        </> : null
       ),
     },
   ];
 
   return (
     <Box>
-      <PageHeader title="Academic Periods" buttonLabel="Add Period" onButtonClick={openCreate} />
+      <PageHeader title="Academic Periods" buttonLabel={canWrite ? "Add Period" : undefined} onButtonClick={openCreate} />
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       <Card>
         <CardContent>

@@ -7,12 +7,18 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import { Edit, Delete, ExpandMore, Add } from '@mui/icons-material';
 import PageHeader from '../components/PageHeader';
+import { useAuth } from '../context/AuthContext';
+import { canEditSchedule, isDeptHead } from '../utils/permissions';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { fetchPrograms, createProgram, updateProgram, deleteProgram } from '../api/programs';
 import { fetchSections, createSection, deleteSection } from '../api/sections';
 import { fetchAcademicPeriods } from '../api/academicPeriods';
 
 export default function Programs() {
+  const { user } = useAuth();
+  const canWrite = canEditSchedule(user);
+  const canWriteSections = (prog) => canWrite
+    || (isDeptHead(user) && (user.managed_program_codes || []).includes(prog.code));
   const [programs, setPrograms] = useState([]);
   const [sections, setSections] = useState([]);
   const [periods, setPeriods] = useState([]);
@@ -94,7 +100,7 @@ export default function Programs() {
 
   return (
     <Box>
-      <PageHeader title="Programs & Sections" buttonLabel="Add Program" onButtonClick={openCreate} />
+      <PageHeader title="Programs & Sections" buttonLabel={canWrite ? "Add Program" : undefined} onButtonClick={openCreate} />
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
 
       {loading ? (
@@ -108,8 +114,8 @@ export default function Programs() {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
                   <Chip label={prog.code} size="small" color="primary" variant="outlined" />
                   <Typography sx={{ flex: 1 }}>{prog.name}</Typography>
-                  <IconButton size="small" onClick={(e) => { e.stopPropagation(); openEdit(prog); }}><Edit fontSize="small" /></IconButton>
-                  <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setDeleteTarget(prog); }}><Delete fontSize="small" /></IconButton>
+                  {canWrite && <IconButton size="small" onClick={(e) => { e.stopPropagation(); openEdit(prog); }}><Edit fontSize="small" /></IconButton>}
+                  {canWrite && <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setDeleteTarget(prog); }}><Delete fontSize="small" /></IconButton>}
                 </Box>
               </AccordionSummary>
               <AccordionDetails>
@@ -119,14 +125,16 @@ export default function Programs() {
                     <Chip
                       key={sec.id}
                       label={`${prog.code} ${sec.year_level}-${sec.section_number}`}
-                      onDelete={() => setDeleteSectionTarget(sec)}
+                      onDelete={canWriteSections(prog) ? () => setDeleteSectionTarget(sec) : undefined}
                       size="small"
                     />
                   ))}
                 </Box>
+                {canWriteSections(prog) && (
                 <Button size="small" startIcon={<Add />} onClick={() => openSectionDialog(prog)}>
                   Add Section
                 </Button>
+                )}
               </AccordionDetails>
             </Accordion>
           );

@@ -7,6 +7,8 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import { Edit, Delete, EventAvailable } from '@mui/icons-material';
 import PageHeader from '../components/PageHeader';
+import { useAuth } from '../context/AuthContext';
+import { canEditSchedule, isDeptHead } from '../utils/permissions';
 import ConfirmDialog from '../components/ConfirmDialog';
 import {
   fetchFaculty, createFaculty, updateFaculty, deleteFaculty,
@@ -19,6 +21,8 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // 7AM to 8PM
 
 export default function Faculty() {
+  const { user } = useAuth();
+  const canWrite = canEditSchedule(user);
   const [rows, setRows] = useState([]);
   const [periods, setPeriods] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -140,8 +144,8 @@ export default function Faculty() {
       renderCell: ({ row }) => (
         <>
           <IconButton size="small" onClick={() => openAvailability(row)} title="Availability"><EventAvailable fontSize="small" /></IconButton>
-          <IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton>
-          <IconButton size="small" color="error" onClick={() => setDeleteTarget(row)}><Delete fontSize="small" /></IconButton>
+          {canWrite && <IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton>}
+          {canWrite && <IconButton size="small" color="error" onClick={() => setDeleteTarget(row)}><Delete fontSize="small" /></IconButton>}
         </>
       ),
     },
@@ -149,7 +153,7 @@ export default function Faculty() {
 
   return (
     <Box>
-      <PageHeader title="Faculty" buttonLabel="Add Faculty" onButtonClick={openCreate} />
+      <PageHeader title="Faculty" buttonLabel={canWrite ? "Add Faculty" : undefined} onButtonClick={openCreate} />
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       <Card>
         <CardContent>

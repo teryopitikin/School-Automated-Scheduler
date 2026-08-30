@@ -5,7 +5,8 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 
 from apps.core.permissions import (
-    IsAdminRole, ScheduleEntryPermission, entry_in_scope, head_scope,
+    CoursePermission, FullEditOrReadOnly, IsAdminRole, ScheduleEntryPermission,
+    SectionPermission, entry_in_scope, head_scope,
 )
 from rest_framework.response import Response
 
@@ -24,6 +25,7 @@ from .serializers import (
 
 
 class AcademicPeriodViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = AcademicPeriod.objects.all()
     serializer_class = AcademicPeriodSerializer
     search_fields = ['name']
@@ -106,6 +108,7 @@ class AcademicPeriodViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class ProgramViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = Program.objects.all()
     serializer_class = ProgramSerializer
     search_fields = ['code', 'name']
@@ -113,6 +116,7 @@ class ProgramViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class DepartmentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
     search_fields = ['code', 'name']
@@ -120,6 +124,7 @@ class DepartmentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class CourseViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, CoursePermission]
     queryset = Course.objects.select_related('department').all()
     serializer_class = CourseSerializer
     search_fields = ['code', 'title']
@@ -128,6 +133,7 @@ class CourseViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class SectionViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, SectionPermission]
     queryset = Section.objects.select_related('program', 'academic_period').all()
     serializer_class = SectionSerializer
     ordering_fields = ['year_level', 'section_number']
@@ -135,6 +141,7 @@ class SectionViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class FacultyViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = Faculty.objects.all()
     serializer_class = FacultySerializer
     search_fields = ['name']
@@ -144,6 +151,7 @@ class FacultyViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 class FacultyAvailabilityViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     """FacultyAvailability has no direct tenant FK; tenant is reached via faculty__tenant."""
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = FacultyAvailability.objects.select_related('faculty', 'academic_period').all()
     serializer_class = FacultyAvailabilitySerializer
     filterset_fields = ['faculty', 'academic_period', 'day_of_week', 'availability_type']
@@ -173,6 +181,7 @@ class FacultyAvailabilityViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class RoomViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = Room.objects.all()
     serializer_class = RoomSerializer
     search_fields = ['name', 'building']
@@ -504,6 +513,7 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
 
 
 class ScheduleConfigViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, FullEditOrReadOnly]
     queryset = ScheduleConfig.objects.select_related('academic_period').all()
     serializer_class = ScheduleConfigSerializer
     filterset_fields = ['academic_period']

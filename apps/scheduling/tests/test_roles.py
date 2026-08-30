@@ -457,3 +457,94 @@ class TestAssistantExecutePermissions:
             }},
         }, format='json')
         assert resp.status_code == 403
+
+
+class TestMetadataWritePermissions:
+    """Data pages: Admin/Registrar edit everything; a DEPT_HEAD may only
+    edit Courses within their assigned departments (or assigned courses)
+    and Sections of their assigned programs; everything else — and every
+    write for viewers — is read-only."""
+
+    @pytest.fixture
+    def crim_dept(self, tenant):
+        return Department.objects.create(tenant=tenant, code='CRIM', name='Criminology')
+
+    @pytest.fixture
+    def crim_head_client(self, tenant):
+        return client_for(make_user(tenant, 'crimhead', 'DEPT_HEAD',
+                                    codes=['BSCRIM'], dept_codes=['CRIM']))
+
+    def test_viewer_cannot_write_metadata(self, viewer_client, course, room):
+        assert viewer_client.post('/api/scheduler/courses/', {}).status_code == 403
+        assert viewer_client.patch(f'/api/scheduler/courses/{course.pk}/',
+                                   {'title': 'X'}, format='json').status_code == 403
+        assert viewer_client.delete(f'/api/scheduler/rooms/{room.pk}/').status_code == 403
+
+    def test_head_edits_course_in_own_department(self, crim_head_client, tenant, crim_dept):
+        c = Course.objects.create(tenant=tenant, department=crim_dept, code='CLJ 1', title='x')
+        resp = crim_head_client.patch(f'/api/scheduler/courses/{c.pk}/',
+                                      {'title': 'CLJ One'}, format='json')
+        assert resp.status_code == 200
+
+    def test_head_cannot_edit_foreign_course(self, crim_head_client, course):
+        resp = crim_head_client.patch(f'/api/scheduler/courses/{course.pk}/',
+                                      {'title': 'X'}, format='json')
+        assert resp.status_code == 403
+
+    def test_assigned_course_editable_even_outside_dept(self, tenant, course):
+        client = client_for(make_user(tenant, 'chead', 'DEPT_HEAD',
+                                      course_codes=['GE 1']))
+        resp = client.patch(f'/api/scheduler/courses/{course.pk}/',
+                            {'title': 'GE One'}, format='json')
+        assert resp.status_code == 200
+
+    def test_head_creates_course_only_in_own_department(self, crim_head_client,
+                                                        crim_dept, dept):
+        ok = crim_head_client.post('/api/scheduler/courses/', {
+            'department': crim_dept.pk, 'code': 'CLJ 9', 'title': 'New',
+            'lec_units': 3, 'lab_units': 0, 'contact_hours': 3, 'has_lab': False,
+        }, format='json')
+        no = crim_head_client.post('/api/scheduler/courses/', {
+            'department': dept.pk, 'code': 'GEN 9', 'title': 'New',
+            'lec_units': 3, 'lab_units': 0, 'contact_hours': 3, 'has_lab': False,
+        }, format='json')
+        assert (ok.status_code, no.status_code) == (201, 403)
+
+    def test_head_creates_section_only_in_own_program(self, crim_head_client, period,
+                                                      beed, bscrim):
+        ok = crim_head_client.post('/api/scheduler/sections/', {
+            'program': bscrim.pk, 'academic_period': period.pk,
+            'year_level': 2, 'section_number': 1,
+        }, format='json')
+        no = crim_head_client.post('/api/scheduler/sections/', {
+            'program': beed.pk, 'academic_period': period.pk,
+            'year_level': 2, 'section_number': 1,
+        }, format='json')
+        assert (ok.status_code, no.status_code) == (201, 403)
+
+    def test_head_edits_own_program_section_not_foreign(self, crim_head_client,
+                                                        beed_sec, bscrim_sec):
+        ok = crim_head_client.patch(f'/api/scheduler/sections/{bscrim_sec.pk}/',
+                                    {'section_number': 5}, format='json')
+        no = crim_head_client.patch(f'/api/scheduler/sections/{beed_sec.pk}/',
+                                    {'section_number': 5}, format='json')
+        assert (ok.status_code, no.status_code) == (200, 403)
+
+    def test_head_read_only_on_other_metadata(self, crim_head_client, room, faculty,
+                                              crim_dept, bscrim):
+        assert crim_head_client.get('/api/scheduler/rooms/').status_code == 200
+        assert crim_head_client.patch(f'/api/scheduler/rooms/{room.pk}/',
+                                      {'capacity': 50}, format='json').status_code == 403
+        assert crim_head_client.patch(f'/api/scheduler/faculty/{faculty.pk}/',
+                                      {'name': 'X'}, format='json').status_code == 403
+        # even their own department/program records are read-only
+        assert crim_head_client.patch(f'/api/scheduler/departments/{crim_dept.pk}/',
+                                      {'name': 'X'}, format='json').status_code == 403
+        assert crim_head_client.patch(f'/api/scheduler/programs/{bscrim.pk}/',
+                                      {'name': 'X'}, format='json').status_code == 403
+
+    def test_registrar_still_edits_everything(self, registrar_client, course, room):
+        assert registrar_client.patch(f'/api/scheduler/courses/{course.pk}/',
+                                      {'title': 'Y'}, format='json').status_code == 200
+        assert registrar_client.patch(f'/api/scheduler/rooms/{room.pk}/',
+                                      {'capacity': 45}, format='json').status_code == 200

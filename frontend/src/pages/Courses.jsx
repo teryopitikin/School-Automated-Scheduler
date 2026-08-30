@@ -7,11 +7,15 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import { Edit, Delete } from '@mui/icons-material';
 import PageHeader from '../components/PageHeader';
+import { useAuth } from '../context/AuthContext';
+import { canEditSchedule, isDeptHead } from '../utils/permissions';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { fetchCourses, createCourse, updateCourse, deleteCourse } from '../api/courses';
 import { fetchDepartments } from '../api/departments';
 
 export default function Courses() {
+  const { user } = useAuth();
+  const canWrite = canEditSchedule(user) || isDeptHead(user);
   const [rows, setRows] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,17 +101,17 @@ export default function Courses() {
     {
       field: 'actions', headerName: 'Actions', width: 100, sortable: false,
       renderCell: ({ row }) => (
-        <>
+        canWrite ? <>
           <IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton>
           <IconButton size="small" color="error" onClick={() => setDeleteTarget(row)}><Delete fontSize="small" /></IconButton>
-        </>
+        </> : null
       ),
     },
   ];
 
   return (
     <Box>
-      <PageHeader title="Courses" buttonLabel="Add Course" onButtonClick={openCreate} />
+      <PageHeader title="Courses" buttonLabel={canWrite ? "Add Course" : undefined} onButtonClick={openCreate} />
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       <Card>
         <CardContent>

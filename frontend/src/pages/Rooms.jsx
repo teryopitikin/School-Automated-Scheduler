@@ -6,6 +6,8 @@ import {
 import { DataGrid } from '@mui/x-data-grid';
 import { Edit, Delete } from '@mui/icons-material';
 import PageHeader from '../components/PageHeader';
+import { useAuth } from '../context/AuthContext';
+import { canEditSchedule, isDeptHead } from '../utils/permissions';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { fetchRooms, createRoom, updateRoom, deleteRoom } from '../api/rooms';
 
@@ -18,6 +20,8 @@ const ROOM_TYPES = [
 ];
 
 export default function Rooms() {
+  const { user } = useAuth();
+  const canWrite = canEditSchedule(user);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -91,17 +95,17 @@ export default function Rooms() {
     {
       field: 'actions', headerName: 'Actions', width: 100, sortable: false,
       renderCell: ({ row }) => (
-        <>
+        canWrite ? <>
           <IconButton size="small" onClick={() => openEdit(row)}><Edit fontSize="small" /></IconButton>
           <IconButton size="small" color="error" onClick={() => setDeleteTarget(row)}><Delete fontSize="small" /></IconButton>
-        </>
+        </> : null
       ),
     },
   ];
 
   return (
     <Box>
-      <PageHeader title="Rooms" buttonLabel="Add Room" onButtonClick={openCreate} />
+      <PageHeader title="Rooms" buttonLabel={canWrite ? "Add Room" : undefined} onButtonClick={openCreate} />
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
       <Card>
         <CardContent>

@@ -84,6 +84,73 @@ def create_allowed(user, section_ids, course_id):
     return bool(programs & scope['programs'])
 
 
+class FullEditOrReadOnly(BasePermission):
+    """Reads for everyone; writes only for ADMIN/REGISTRAR. Used on the
+    data resources heads don't own (departments, programs, faculty,
+    rooms, periods, config)."""
+    message = 'Only administrators and registrars can change this.'
+
+    def has_permission(self, request, view):
+        return request.method in SAFE_METHODS or can_edit_all(request.user)
+
+
+class CoursePermission(BasePermission):
+    """Reads for everyone; ADMIN/REGISTRAR write anything; a DEPT_HEAD
+    may create courses only in their managed departments and edit only
+    courses in those departments (or their individually assigned
+    courses)."""
+    message = 'You can only modify courses of your own department.'
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS or can_edit_all(request.user):
+            return True
+        scope = head_scope(request.user)
+        if scope is None:
+            return False
+        if view.action == 'create':
+            from apps.scheduling.models import Department
+            dept = Department.objects.filter(
+                pk=request.data.get('department')).first()
+            return bool(dept and dept.code in scope['departments'])
+        return True   # object-level check decides
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS or can_edit_all(request.user):
+            return True
+        scope = head_scope(request.user)
+        if scope is None:
+            return False
+        return (obj.code in scope['courses']
+                or (obj.department and obj.department.code in scope['departments']))
+
+
+class SectionPermission(BasePermission):
+    """Reads for everyone; ADMIN/REGISTRAR write anything; a DEPT_HEAD
+    manages only sections of their assigned programs."""
+    message = 'You can only modify sections of your own programs.'
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS or can_edit_all(request.user):
+            return True
+        scope = head_scope(request.user)
+        if scope is None:
+            return False
+        if view.action == 'create':
+            from apps.scheduling.models import Program
+            program = Program.objects.filter(
+                pk=request.data.get('program')).first()
+            return bool(program and program.code in scope['programs'])
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in SAFE_METHODS or can_edit_all(request.user):
+            return True
+        scope = head_scope(request.user)
+        if scope is None:
+            return False
+        return obj.program.code in scope['programs']
+
+
 class IsAdminRole(BasePermission):
     message = 'Only administrators can do this.'
 
