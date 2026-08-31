@@ -59,7 +59,7 @@ function RoomTick({ x, y, payload, onClickRoom }) {
   const v = String(payload.value);
   const label = (v.length > 20 ? `${v.slice(0, 19)}…` : v).replace(/ /g, '\u00A0');
   return (
-    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill="#0d9488"
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill="#1D6E58"
       style={{ cursor: 'pointer', textDecoration: 'underline' }}
       onClick={() => onClickRoom(v)}>
       {label}
@@ -313,7 +313,7 @@ export default function Dashboard() {
         <Legend />
         <Bar dataKey="available_hours" name="Available (operating hours)"
           fill="#cbd5e1" barSize={9} />
-        <Bar dataKey="booked_hours" name="Booked" fill="#0d9488" barSize={9}
+        <Bar dataKey="booked_hours" name="Booked" fill="#1D6E58" barSize={9}
           style={{ cursor: 'pointer' }}
           onClick={(d) => { const n = d?.payload?.name ?? d?.name; if (n) goRoom(n); }}>
           <LabelList dataKey="pct" position="right"
@@ -369,7 +369,7 @@ export default function Dashboard() {
                     <XAxis type="number" allowDecimals={false} />
                     <YAxis dataKey="program_code" type="category" width={70} tick={{ fontSize: 11 }} />
                     <Tooltip />
-                    <Bar dataKey="scheduled" name="Scheduled courses" fill="#22c55e" stackId="a" radius={[0, 3, 3, 0]} />
+                    <Bar dataKey="scheduled" name="Scheduled courses" fill="#2E9E6B" stackId="a" radius={[0, 3, 3, 0]} />
                     <Bar dataKey="remaining" name="Remaining" fill="#e2e8f0" stackId="a" radius={[0, 3, 3, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -402,7 +402,7 @@ export default function Dashboard() {
                     <ReferenceLine x={OVERLOAD_MAX} stroke="#ef4444" strokeDasharray="4 3" />
                     <Bar dataKey="total_units" name="Units">
                       {facultySorted.slice(0, 10).map((f, i) => (
-                        <Cell key={i} fill={isOver(f) ? '#ef4444' : '#0d9488'} />
+                        <Cell key={i} fill={isOver(f) ? '#C4453C' : '#1D6E58'} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -491,8 +491,8 @@ export default function Dashboard() {
                           }} />
                         <Tooltip />
                         <Legend />
-                        {[['faculty', TYPE_LABELS.faculty, '#f97316'],
-                          ['section', TYPE_LABELS.section, '#eab308']].map(([key, name, fill]) => (
+                        {[['faculty', TYPE_LABELS.faculty, '#C4453C'],
+                          ['section', TYPE_LABELS.section, '#B98A2F']].map(([key, name, fill]) => (
                             <Bar key={key} dataKey={key} name={name} fill={fill} stackId="c"
                               barSize={14} style={{ cursor: 'pointer' }}
                               onClick={(d) => {

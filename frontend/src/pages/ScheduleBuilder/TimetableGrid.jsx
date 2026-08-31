@@ -256,10 +256,10 @@ export default function TimetableGrid({
                   position: 'absolute', left: 2, right: 2, zIndex: 2, pointerEvents: 'none',
                   top: (dropHint.start - dayStartMin) * pxPerMin,
                   height: (dropHint.end - dropHint.start) * pxPerMin - 2,
-                  border: '2px dashed #0d9488', borderRadius: '4px', bgcolor: '#0d948814',
+                  border: '2px dashed #1D6E58', borderRadius: '4px', bgcolor: '#1D6E5814',
                   display: 'flex', alignItems: 'flex-start', px: 0.6,
                 }}>
-                  <Typography sx={{ fontSize: '0.62rem', fontWeight: 700, color: '#0d9488' }}>
+                  <Typography sx={{ fontSize: '0.62rem', fontWeight: 700, color: '#1D6E58' }}>
                     {fmt(dropHint.start)}–{fmt(dropHint.end)}
                   </Typography>
                 </Box>
