@@ -5,11 +5,15 @@ from django.db.models import Sum
 from .models import ScheduleEntry
 
 
-def _is_async(entry):
-    """Entries held in a non-physical 'Asynchronous' room have no fixed
-    meeting slot, so they are exempt from hard-conflict tagging entirely."""
-    name = getattr(entry.room, 'name', '') or ''
-    return 'async' in name.lower()
+PLACEHOLDER_ROOM_NAMES = {'n/a', '-', ''}
+
+
+def _is_exempt(entry):
+    """Entries with no fixed meeting slot are exempt from hard-conflict
+    tagging entirely: 'Asynchronous' rooms, and placeholder rooms ('N/A',
+    '-', blank) used for field study / internally-arranged classes."""
+    name = (getattr(entry.room, 'name', '') or '').strip().lower()
+    return 'async' in name or name in PLACEHOLDER_ROOM_NAMES
 
 
 def _overlapping(entry):
@@ -45,12 +49,12 @@ def detect_conflicts(entry):
     """
     hard = []
     warnings = []
-    entry_is_async = _is_async(entry)
+    entry_is_exempt = _is_exempt(entry)
 
-    if entry.faculty_id is not None and not entry_is_async:
+    if entry.faculty_id is not None and not entry_is_exempt:
         faculty_qs = _overlapping(entry).filter(faculty_id=entry.faculty_id)
         for other in faculty_qs.select_related('course', 'room'):
-            if _is_async(other):
+            if _is_exempt(other):
                 continue
             hard.append({
                 'type': 'faculty',
@@ -59,13 +63,13 @@ def detect_conflicts(entry):
             })
 
     section_ids = list(entry.sections.values_list('pk', flat=True))
-    if section_ids and not entry_is_async:
+    if section_ids and not entry_is_exempt:
         seen = {h['conflicting_entry_id'] for h in hard}
         for other in _overlapping(entry).filter(sections__in=section_ids) \
                 .select_related('course', 'room').distinct():
             if other.pk in seen:
                 continue   # already reported as a room/faculty clash
-            if _is_async(other):
+            if _is_exempt(other):
                 continue
             hard.append({
                 'type': 'section',
@@ -122,8 +126,8 @@ def analyze_period(tenant, period, entries=None):
     # --- hard conflicts: sweep overlapping pairs per day -------------------
     def add_hard(a, b):
         """Record the clash a<->b on both sides, mirroring detect_conflicts."""
-        if _is_async(a) or _is_async(b):
-            return   # asynchronous classes never clash with anything
+        if _is_exempt(a) or _is_exempt(b):
+            return   # async/field-study/internally-arranged classes never clash
         pair_faculty = (a.faculty_id is not None
                         and a.faculty_id == b.faculty_id)
         pair_section = (not pair_faculty

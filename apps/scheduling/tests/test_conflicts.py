@@ -362,9 +362,10 @@ class TestAsynchronousExemption:
 
 
 class TestPlaceholderRoomExemption:
-    """Entries in a placeholder room ('N/A', '-') are not in a specific room,
-    so they must never be tagged as (or cause) a ROOM conflict. Faculty and
-    section clashes involving them are still real and still flagged."""
+    """USER RULE 2026-09-01: classes in a placeholder room ('N/A', '-',
+    blank) are field-study / internally-arranged classes with no fixed
+    meeting slot — like Asynchronous, they are never tagged as (or cause)
+    ANY hard conflict."""
 
     @pytest.fixture
     def na_room(self, tenant):
@@ -399,21 +400,37 @@ class TestPlaceholderRoomExemption:
         assert detect_conflicts(e1)['hard'] == []
         assert detect_conflicts(e2)['hard'] == []
 
-    def test_faculty_conflict_still_detected_in_placeholder_room(
+    def test_faculty_overlap_in_placeholder_room_is_exempt(
             self, tenant, period, course, course2, faculty, na_room):
-        """Same teacher in two overlapping placeholder-room classes is still a
-        real clash — only the ROOM dimension is exempt."""
+        """Field-study classes have no fixed slot: the same teacher across two
+        overlapping placeholder-room classes is NOT flagged."""
         e1 = make_entry(tenant, period, course, faculty, na_room, 'MON', (8, 0), (10, 0))
         e2 = make_entry(tenant, period, course2, faculty, na_room, 'MON', (9, 0), (11, 0))
-        assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['faculty']
-        assert [h['type'] for h in detect_conflicts(e2)['hard']] == ['faculty']
+        assert detect_conflicts(e1)['hard'] == []
+        assert detect_conflicts(e2)['hard'] == []
 
-    def test_section_conflict_still_detected_in_placeholder_room(
+    def test_section_overlap_in_placeholder_room_is_exempt(
             self, tenant, period, course, course2, faculty, faculty2, na_room, section):
         e1 = make_entry(tenant, period, course, faculty, na_room, 'MON', (8, 0), (10, 0), [section])
         e2 = make_entry(tenant, period, course2, faculty2, na_room, 'MON', (9, 0), (11, 0), [section])
-        assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['section']
-        assert [h['type'] for h in detect_conflicts(e2)['hard']] == ['section']
+        assert detect_conflicts(e1)['hard'] == []
+        assert detect_conflicts(e2)['hard'] == []
+
+    def test_placeholder_vs_real_room_class_is_exempt(
+            self, tenant, period, course, course2, faculty, room, na_room, section):
+        """A field-study class never clashes with a real class either — the
+        real class stays clean too."""
+        fs = make_entry(tenant, period, course, faculty, na_room, 'MON', (8, 0), (10, 0), [section])
+        real = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0), [section])
+        assert detect_conflicts(fs)['hard'] == []
+        assert detect_conflicts(real)['hard'] == []
+
+    def test_real_room_clashes_still_detected(
+            self, tenant, period, course, course2, faculty, room, na_room):
+        """The exemption must not swallow clashes between two REAL classes."""
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0))
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
+        assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['faculty']
 
     def test_physical_room_overlap_also_ignored(
             self, tenant, period, course, course2, faculty, faculty2, room):
@@ -429,8 +446,8 @@ class TestPlaceholderRoomExemption:
         e2 = make_entry(tenant, period, course2, faculty, na_room, 'MON', (9, 0), (11, 0))
         e3 = make_entry(tenant, period, course2, faculty2, room, 'MON', (8, 0), (10, 0))
         bulk = analyze_period(tenant, period)
-        assert all(h['type'] != 'room' for h in bulk[e1.pk]['hard'])
-        assert all(h['type'] != 'room' for h in bulk[e2.pk]['hard'])
+        assert bulk[e1.pk]['hard'] == []
+        assert bulk[e2.pk]['hard'] == []
         for e in (e1, e2, e3):
             single = detect_conflicts(e)
             def norm(items):
