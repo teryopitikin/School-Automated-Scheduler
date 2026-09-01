@@ -41,7 +41,12 @@ export default function AssistantDrawer() {
         setActions((a) => [...a, ...res.data.actions.map((x) => ({ ...x, status: 'pending' }))]);
       }
     } catch (err) {
-      const detail = err.response?.data?.detail || 'Request failed — is the backend running?';
+      // No response at all means the request timed out or the network
+      // dropped — say which, rather than blaming the backend.
+      const detail = err.response?.data?.detail
+        || (err.code === 'ECONNABORTED'
+          ? 'That took too long and was cancelled. Try a shorter question, or ask again.'
+          : 'Could not reach the server. Check your connection and try again.');
       setChat((c) => [...c, { role: 'error', text: detail }]);
     } finally {
       setBusy(false);
