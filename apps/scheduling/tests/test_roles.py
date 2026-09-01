@@ -548,3 +548,76 @@ class TestMetadataWritePermissions:
                                       {'title': 'Y'}, format='json').status_code == 200
         assert registrar_client.patch(f'/api/scheduler/rooms/{room.pk}/',
                                       {'capacity': 45}, format='json').status_code == 200
+
+
+class TestConflictDismissalApi:
+    """POST /schedules/dismiss-conflict/ hides a pair everywhere; GET
+    /schedules/dismissals/ lists them; POST /schedules/restore-dismissal/
+    brings one back. Editors only, heads within scope."""
+
+    @pytest.fixture
+    def clash(self, tenant, period, course, faculty, room, beed_sec):
+        import datetime as dt
+        e1 = make_entry(tenant, period, course, faculty, room, [beed_sec], day='MON')
+        e2 = make_entry(tenant, period, course, faculty, room, [beed_sec], day='MON',
+                        start=(9, 0), end=(11, 0))
+        return e1, e2
+
+    def _conflict_ids(self, client, period):
+        resp = client.get(f'/api/scheduler/schedules/conflicts/?academic_period={period.pk}')
+        return {i['entry_id'] for i in resp.data}
+
+    def test_dismiss_hides_everywhere_and_restore_brings_back(
+            self, admin_client, tenant, period, clash):
+        e1, e2 = clash
+        assert self._conflict_ids(admin_client, period) == {e1.pk, e2.pk}
+        resp = admin_client.post('/api/scheduler/schedules/dismiss-conflict/', {
+            'entry_id': e1.pk, 'other_id': e2.pk, 'type': 'faculty',
+        }, format='json')
+        assert resp.status_code == 201, resp.data
+        assert self._conflict_ids(admin_client, period) == set()
+
+        listing = admin_client.get(
+            f'/api/scheduler/schedules/dismissals/?academic_period={period.pk}')
+        assert listing.status_code == 200
+        assert len(listing.data) == 1
+        assert listing.data[0]['conflict_type'] == 'faculty'
+        assert listing.data[0]['summary']
+
+        restore = admin_client.post('/api/scheduler/schedules/restore-dismissal/',
+                                    {'id': listing.data[0]['id']}, format='json')
+        assert restore.status_code == 200
+        assert self._conflict_ids(admin_client, period) == {e1.pk, e2.pk}
+
+    def test_dismissed_pair_no_longer_blocks_saves(self, admin_client, tenant, period, clash):
+        e1, e2 = clash
+        admin_client.post('/api/scheduler/schedules/dismiss-conflict/', {
+            'entry_id': e1.pk, 'other_id': e2.pk, 'type': 'faculty',
+        }, format='json')
+        # editing an unrelated field re-runs conflict checks; must not 409
+        resp = admin_client.patch(f'/api/scheduler/schedules/{e1.pk}/',
+                                  {'class_size': 30}, format='json')
+        assert resp.status_code == 200, resp.data
+
+    def test_viewer_cannot_dismiss(self, viewer_client, clash):
+        e1, e2 = clash
+        resp = viewer_client.post('/api/scheduler/schedules/dismiss-conflict/', {
+            'entry_id': e1.pk, 'other_id': e2.pk, 'type': 'faculty',
+        }, format='json')
+        assert resp.status_code == 403
+
+    def test_head_dismisses_own_scope_only(self, head_client, tenant, period, clash,
+                                           course, faculty, room, bscrim_sec):
+        e1, e2 = clash    # BEED pair — head manages BEED
+        ok = head_client.post('/api/scheduler/schedules/dismiss-conflict/', {
+            'entry_id': e1.pk, 'other_id': e2.pk, 'type': 'faculty',
+        }, format='json')
+        assert ok.status_code == 201
+        f2 = Faculty.objects.create(tenant=tenant, name='Z', max_load_units=999)
+        c1 = make_entry(tenant, period, course, f2, room, [bscrim_sec], day='TUE')
+        c2 = make_entry(tenant, period, course, f2, room, [bscrim_sec], day='TUE',
+                        start=(9, 0), end=(11, 0))
+        no = head_client.post('/api/scheduler/schedules/dismiss-conflict/', {
+            'entry_id': c1.pk, 'other_id': c2.pk, 'type': 'faculty',
+        }, format='json')
+        assert no.status_code == 403

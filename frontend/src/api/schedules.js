@@ -12,3 +12,6 @@ export const suggestSlots = (data) => api.post('/schedules/suggest/', data);
 export const fetchConflicts = (params) => api.get('/schedules/conflicts/', { params });
 export const fetchFreeRooms = (id) => api.get(`/schedules/${id}/free-rooms/`);
 export const fetchStats = (params) => api.get('/schedules/stats/', { params });
+export const dismissConflict = (data) => api.post('/schedules/dismiss-conflict/', data);
+export const fetchDismissals = (params) => api.get('/schedules/dismissals/', { params });
+export const restoreDismissal = (id) => api.post('/schedules/restore-dismissal/', { id });

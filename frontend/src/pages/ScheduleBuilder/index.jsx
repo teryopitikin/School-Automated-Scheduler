@@ -532,7 +532,7 @@ export default function ScheduleBuilder() {
         onEditEntry={handleEditById}
         open={conflictDrawerOpen} onClose={() => setConflictDrawerOpen(false)}
         conflicts={visibleConflicts} loading={conflictsLoading} entriesById={entriesById}
-        periodId={activePeriod}
+        periodId={activePeriod} onChanged={reload}
       />
     </Box>
   );

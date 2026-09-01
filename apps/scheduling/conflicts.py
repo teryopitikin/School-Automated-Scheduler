@@ -16,6 +16,27 @@ def _is_exempt(entry):
     return 'async' in name or name in PLACEHOLDER_ROOM_NAMES
 
 
+def entry_signature(e):
+    """Stable identity of a plotted class: course, day, times, teacher,
+    sections. Survives re-imports (no db ids); changes when the class
+    moves — so a dismissal stops matching and the conflict resurfaces."""
+    secs = '+'.join(sorted(str(s) for s in e.sections.all()))
+    fac = e.faculty.name if e.faculty else 'TBA'
+    return f'{e.course.code}@{e.day_of_week} {e.time_start}-{e.time_end}/{fac}/{secs}'
+
+
+def pair_signature(conflict_type, a, b):
+    """Order-independent signature for a conflicting pair."""
+    sa, sb = sorted([entry_signature(a), entry_signature(b)])
+    return f'{conflict_type}|{sa}|{sb}'
+
+
+def dismissed_signatures(tenant, period):
+    from .models import ConflictDismissal
+    return set(ConflictDismissal.objects.filter(
+        tenant=tenant, academic_period=period).values_list('signature', flat=True))
+
+
 def _overlapping(entry):
     """Entries on the same day whose time range overlaps entry's (touching
     boundaries — one ends exactly when the other starts — do NOT overlap)."""
@@ -60,6 +81,7 @@ def detect_conflicts(entry):
                 'type': 'faculty',
                 'message': f'{entry.faculty} is also teaching {other.course.code} at {other.time_start}-{other.time_end}',
                 'conflicting_entry_id': other.pk,
+                '_other': other,
             })
 
     section_ids = list(entry.sections.values_list('pk', flat=True))
@@ -75,7 +97,17 @@ def detect_conflicts(entry):
                 'type': 'section',
                 'message': f'Section is also in {other.course.code} at {other.time_start}-{other.time_end}',
                 'conflicting_entry_id': other.pk,
+                '_other': other,
             })
+
+    # Drop pairs the user chose to ignore forever.
+    if hard:
+        dismissed = dismissed_signatures(entry.tenant, entry.academic_period)
+        if dismissed:
+            hard = [h for h in hard
+                    if pair_signature(h['type'], entry, h['_other']) not in dismissed]
+    for h in hard:
+        h.pop('_other', None)
 
     # Warnings
     if entry.faculty_id:
@@ -122,6 +154,7 @@ def analyze_period(tenant, period, entries=None):
 
     sections_of = {e.pk: {s.pk for s in e.sections.all()} for e in entries}
     result = {e.pk: {'hard': [], 'warnings': []} for e in entries}
+    dismissed = dismissed_signatures(tenant, period)
 
     # --- hard conflicts: sweep overlapping pairs per day -------------------
     def add_hard(a, b):
@@ -132,6 +165,10 @@ def analyze_period(tenant, period, entries=None):
                         and a.faculty_id == b.faculty_id)
         pair_section = (not pair_faculty
                         and bool(sections_of[a.pk] & sections_of[b.pk]))
+        if pair_faculty or pair_section:
+            ctype = 'faculty' if pair_faculty else 'section'
+            if dismissed and pair_signature(ctype, a, b) in dismissed:
+                return
         for me, other in ((a, b), (b, a)):
             if pair_faculty:
                 item = {

@@ -453,3 +453,62 @@ class TestPlaceholderRoomExemption:
             def norm(items):
                 return sorted((i['type'], i['conflicting_entry_id']) for i in items)
             assert norm(bulk[e.pk]['hard']) == norm(single['hard'])
+
+
+class TestConflictDismissal:
+    """'Ignore forever': a dismissed pair stops being reported by BOTH
+    engines and no longer blocks saves; it resurfaces when either class
+    changes (new signature); restore brings it back."""
+
+    @pytest.fixture
+    def clash(self, tenant, period, course, course2, faculty, room, section):
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
+        return e1, e2
+
+    def _dismiss(self, tenant, period, e1, e2, ctype='faculty'):
+        from apps.scheduling.conflicts import pair_signature
+        from apps.scheduling.models import ConflictDismissal
+        return ConflictDismissal.objects.create(
+            tenant=tenant, academic_period=period,
+            signature=pair_signature(ctype, e1, e2), conflict_type=ctype)
+
+    def test_dismissed_pair_not_reported(self, tenant, period, clash):
+        e1, e2 = clash
+        assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['faculty']
+        self._dismiss(tenant, period, e1, e2)
+        assert detect_conflicts(e1)['hard'] == []
+        assert detect_conflicts(e2)['hard'] == []
+
+    def test_dismissed_pair_excluded_from_bulk(self, tenant, period, clash):
+        from apps.scheduling.conflicts import analyze_period
+        e1, e2 = clash
+        self._dismiss(tenant, period, e1, e2)
+        bulk = analyze_period(tenant, period)
+        assert bulk[e1.pk]['hard'] == []
+        assert bulk[e2.pk]['hard'] == []
+
+    def test_signature_is_order_independent(self, tenant, period, clash):
+        e1, e2 = clash
+        self._dismiss(tenant, period, e2, e1)   # reversed order
+        assert detect_conflicts(e1)['hard'] == []
+
+    def test_moving_a_class_resurfaces_the_conflict(self, tenant, period, clash):
+        e1, e2 = clash
+        self._dismiss(tenant, period, e1, e2)
+        e2.time_start = datetime.time(9, 30)
+        e2.save()
+        assert [h['type'] for h in detect_conflicts(e1)['hard']] == ['faculty']
+
+    def test_other_pairs_unaffected(self, tenant, period, course, course2, faculty, room, section, clash):
+        e1, e2 = clash
+        f2 = Faculty.objects.create(tenant=tenant, name='X', max_load_units=24)
+        prog2 = Program.objects.create(tenant=tenant, code='BSF', name='BSF')
+        sec2 = Section.objects.create(tenant=tenant, program=prog2,
+                                      academic_period=period, year_level=1, section_number=1)
+        e3 = make_entry(tenant, period, course, f2, room, 'MON', (8, 0), (10, 0), [sec2])
+        e4 = make_entry(tenant, period, course2, f2, room, 'MON', (9, 0), (11, 0), [sec2])
+        self._dismiss(tenant, period, e1, e2)
+        assert [h['type'] for h in detect_conflicts(e3)['hard']] == ['faculty']
+        assert any(h['type'] == 'section' for h in detect_conflicts(e4)['hard']) or \
+               any(h['type'] == 'faculty' for h in detect_conflicts(e4)['hard'])

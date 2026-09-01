@@ -1,11 +1,14 @@
 import { useState } from 'react';
+import { useEffect } from 'react';
 import {
   Drawer, Box, Typography, IconButton, Chip, Divider, CircularProgress, Button,
+  Dialog, DialogTitle, DialogContent, List, ListItem, ListItemText, Tooltip,
 } from '@mui/material';
 import {
-  Close, Person, Groups, TrendingUp, ErrorOutline, FileDownload,
+  Close, Person, Groups, TrendingUp, ErrorOutline, FileDownload, VisibilityOff,
 } from '@mui/icons-material';
 import { exportExcel } from '../../api/importExport';
+import { dismissConflict, fetchDismissals, restoreDismissal } from '../../api/schedules';
 
 const DAY_LABELS = {
   MON: 'Mon', TUE: 'Tue', WED: 'Wed', THU: 'Thu', FRI: 'Fri', SAT: 'Sat', SUN: 'Sun',
@@ -74,7 +77,7 @@ function ClickableLine({ text, onClick }) {
   );
 }
 
-function IssueRow({ issue, self, selfId, other, onEditEntry }) {
+function IssueRow({ issue, self, selfId, other, onEditEntry, onIgnore }) {
   const meta = TYPE_META[issue.type] || { label: issue.type || 'Conflict', Icon: ErrorOutline };
   const { Icon } = meta;
   const selfDesc = describe(self, { withCourse: true, withTime: true });
@@ -83,10 +86,19 @@ function IssueRow({ issue, self, selfId, other, onEditEntry }) {
   return (
     <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', mt: 1 }}>
       <Icon sx={{ fontSize: 18, color: 'error.main', mt: '1px', flexShrink: 0 }} />
-      <Box>
-        <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'error.main' }}>
-          {meta.label}
-        </Typography>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography sx={{ fontSize: '0.75rem', fontWeight: 600, color: 'error.main' }}>
+            {meta.label}
+          </Typography>
+          {onIgnore && (issue.type === 'faculty' || issue.type === 'section') && (
+            <Tooltip title="Ignore forever — this pair stops being reported unless one of the classes changes">
+              <IconButton size="small" onClick={() => onIgnore(issue)} sx={{ p: 0.25 }}>
+                <VisibilityOff sx={{ fontSize: 15 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
         {otherDesc ? (
           <>
             {selfDesc && (
@@ -106,9 +118,39 @@ function IssueRow({ issue, self, selfId, other, onEditEntry }) {
   );
 }
 
-export default function ConflictDrawer({ open, onClose, conflicts, loading, entriesById, periodId, onEditEntry }) {
+export default function ConflictDrawer({ open, onClose, conflicts, loading, entriesById, periodId, onEditEntry, onChanged }) {
   const total = conflicts.length;
   const [exporting, setExporting] = useState(false);
+  const [ignored, setIgnored] = useState([]);
+  const [ignoredOpen, setIgnoredOpen] = useState(false);
+
+  const loadIgnored = () => {
+    if (!periodId) return;
+    fetchDismissals({ academic_period: periodId })
+      .then((res) => setIgnored(res.data))
+      .catch(() => {});
+  };
+  useEffect(() => { if (open) loadIgnored(); }, [open, periodId]); // eslint-disable-line
+
+  const handleIgnore = async (entryId, issue) => {
+    try {
+      await dismissConflict({
+        entry_id: entryId,
+        other_id: issue.other?.id ?? issue.conflicting_entry_id,
+        type: issue.type,
+      });
+      loadIgnored();
+      onChanged?.();
+    } catch { /* backend refuses out-of-scope ignores */ }
+  };
+
+  const handleRestore = async (id) => {
+    try {
+      await restoreDismissal(id);
+      loadIgnored();
+      onChanged?.();
+    } catch { /* only admins or the ignorer can restore */ }
+  };
 
   const handleExport = async () => {
     if (!periodId) return;
@@ -147,8 +189,14 @@ export default function ConflictDrawer({ open, onClose, conflicts, loading, entr
         </Typography>
         {!loading && total > 0 && (
           <Button fullWidth size="small" variant="outlined" startIcon={<FileDownload />}
-            onClick={handleExport} disabled={exporting} sx={{ mb: 1.5 }}>
+            onClick={handleExport} disabled={exporting} sx={{ mb: 1 }}>
             {exporting ? 'Exporting…' : 'Export to Excel'}
+          </Button>
+        )}
+        {!loading && ignored.length > 0 && (
+          <Button fullWidth size="small" startIcon={<VisibilityOff />}
+            onClick={() => setIgnoredOpen(true)} sx={{ mb: 1, color: 'text.secondary' }}>
+            Ignored conflicts ({ignored.length})
           </Button>
         )}
         <Divider sx={{ mb: 1.5 }} />
@@ -192,13 +240,40 @@ export default function ConflictDrawer({ open, onClose, conflicts, loading, entr
                 {hard.map((h, j) => (
                   <IssueRow key={`h${j}`} issue={h} self={thisEntry} selfId={c.entry_id}
                     other={h.other || entriesById?.[h.conflicting_entry_id]}
-                    onEditEntry={onEditEntry} />
+                    onEditEntry={onEditEntry}
+                    onIgnore={(issue) => handleIgnore(c.entry_id, issue)} />
                 ))}
               </Box>
             );
           })
         )}
       </Box>
+
+      <Dialog open={ignoredOpen} onClose={() => setIgnoredOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Ignored conflicts</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            These pairs are never reported. If one of the classes moves or
+            changes, the conflict resurfaces on its own. Restore a pair to
+            start reporting it again.
+          </Typography>
+          <List dense>
+            {ignored.map((d) => (
+              <ListItem key={d.id}
+                secondaryAction={
+                  <Button size="small" onClick={() => handleRestore(d.id)}>Restore</Button>
+                }>
+                <ListItemText
+                  primary={prettyMessage(d.summary)}
+                  secondary={`${TYPE_META[d.conflict_type]?.label || d.conflict_type}`
+                    + (d.created_by ? ` · ignored by ${d.created_by}` : '')}
+                  primaryTypographyProps={{ fontSize: '0.82rem' }}
+                  secondaryTypographyProps={{ fontSize: '0.72rem' }} />
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+      </Dialog>
     </Drawer>
   );
 }

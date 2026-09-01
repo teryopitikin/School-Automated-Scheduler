@@ -252,3 +252,32 @@ class ScheduleConfig(models.Model):
 
     def __str__(self):
         return f'Config for {self.academic_period}'
+
+
+class ConflictDismissal(models.Model):
+    """A conflict pair the user chose to ignore forever. Keyed by a stable
+    SIGNATURE of both classes (course, day, times, teacher, sections) —
+    not entry ids — so it survives wipe-and-replace imports, and
+    automatically resurfaces if either class moves or changes."""
+    tenant = models.ForeignKey('core.Tenant', on_delete=models.CASCADE,
+                               related_name='conflict_dismissals')
+    academic_period = models.ForeignKey(AcademicPeriod, on_delete=models.CASCADE,
+                                        related_name='conflict_dismissals')
+    signature = models.CharField(max_length=500)
+    conflict_type = models.CharField(max_length=20)
+    summary = models.TextField(blank=True)
+    created_by = models.ForeignKey('core.User', null=True, blank=True,
+                                   on_delete=models.SET_NULL,
+                                   related_name='conflict_dismissals')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'scheduling_conflict_dismissals'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tenant', 'academic_period', 'signature'],
+                name='uniq_dismissal_signature'),
+        ]
+
+    def __str__(self):
+        return f'Ignored: {self.summary or self.signature}'

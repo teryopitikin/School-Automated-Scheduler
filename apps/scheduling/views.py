@@ -447,6 +447,73 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
             ]
         return Response(all_conflicts)
 
+    @action(detail=False, methods=['post'], url_path='dismiss-conflict')
+    def dismiss_conflict(self, request):
+        """Ignore a conflicting pair forever: stores a signature of both
+        classes so the pair stops being reported (and stops blocking
+        saves) until either class changes. Editors only; department
+        heads only for pairs touching their assignments."""
+        from apps.core.permissions import user_can_edit_entry
+        from .conflicts import pair_signature
+        from .models import ConflictDismissal
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        try:
+            a = ScheduleEntry.objects.get(tenant=tenant, pk=request.data.get('entry_id'))
+            b = ScheduleEntry.objects.get(tenant=tenant, pk=request.data.get('other_id'))
+        except ScheduleEntry.DoesNotExist:
+            return Response({'detail': 'Entry not found.'}, status=status.HTTP_404_NOT_FOUND)
+        ctype = request.data.get('type')
+        if ctype not in ('faculty', 'section'):
+            return Response({'detail': 'type must be faculty or section.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not (user_can_edit_entry(request.user, a) or user_can_edit_entry(request.user, b)):
+            return Response({'detail': 'You can only ignore conflicts of your own department.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        summary = f'{a.course.code} {a.day_of_week} {a.time_start}-{a.time_end} ↔ ' \
+                  f'{b.course.code} {b.day_of_week} {b.time_start}-{b.time_end}'
+        dismissal, _created = ConflictDismissal.objects.get_or_create(
+            tenant=tenant, academic_period=a.academic_period,
+            signature=pair_signature(ctype, a, b),
+            defaults={'conflict_type': ctype, 'summary': summary,
+                      'created_by': request.user})
+        return Response({'id': dismissal.pk, 'summary': dismissal.summary},
+                        status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def dismissals(self, request):
+        """List ignored conflict pairs for a period."""
+        from .models import ConflictDismissal
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        qs = ConflictDismissal.objects.filter(tenant=tenant).order_by('-created_at')
+        period_id = request.query_params.get('academic_period')
+        if period_id:
+            qs = qs.filter(academic_period_id=period_id)
+        return Response([{
+            'id': d.pk, 'conflict_type': d.conflict_type, 'summary': d.summary,
+            'created_by': d.created_by.username if d.created_by else None,
+            'created_at': d.created_at,
+        } for d in qs])
+
+    @action(detail=False, methods=['post'], url_path='restore-dismissal')
+    def restore_dismissal(self, request):
+        """Un-ignore a pair: the conflict is reported again."""
+        from apps.core.permissions import can_edit_all
+        from .models import ConflictDismissal
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        try:
+            d = ConflictDismissal.objects.get(tenant=tenant, pk=request.data.get('id'))
+        except ConflictDismissal.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if not can_edit_all(request.user) and d.created_by_id != request.user.pk:
+            return Response({'detail': 'Only admins/registrars or whoever ignored it can restore it.'},
+                            status=status.HTTP_403_FORBIDDEN)
+        d.delete()
+        return Response({'restored': True})
+
     @action(detail=False, methods=['post'])
     def suggest(self, request):
         from .suggestions import generate_suggestions, generate_paired_suggestions
