@@ -8,6 +8,7 @@ import {
 } from '@mui/icons-material';
 import { assistantChat, assistantExecute } from '../api/assistant';
 import { INK, FONT_MONO, FONT_DISPLAY } from '../theme';
+import MarkdownMessage from './MarkdownMessage';
 
 // Chat with Claude about the schedule. Write actions Claude stages arrive as
 // cards; nothing changes until the user clicks Approve, which executes through
@@ -230,7 +231,8 @@ export default function AssistantDrawer() {
                 {!mine && <ClaudeMark />}
                 <Box sx={{
                   maxWidth: '86%', px: 1.5, py: 1.15, borderRadius: '12px',
-                  whiteSpace: 'pre-wrap', fontSize: '0.85rem', lineHeight: 1.55,
+                  ...(mine && { whiteSpace: 'pre-wrap' }),
+                  fontSize: '0.85rem', lineHeight: 1.55,
                   ...(mine
                     ? {
                       bgcolor: 'primary.main', color: 'primary.contrastText',
@@ -251,7 +253,7 @@ export default function AssistantDrawer() {
                         '& .MuiChip-icon': { color: 'inherit' },
                       }} />
                   )}
-                  {m.text}
+                  {mine ? m.text : <MarkdownMessage text={m.text} />}
                 </Box>
               </Box>
             );
