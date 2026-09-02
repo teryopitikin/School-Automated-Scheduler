@@ -621,3 +621,47 @@ class TestConflictDismissalApi:
             'entry_id': c1.pk, 'other_id': c2.pk, 'type': 'faculty',
         }, format='json')
         assert no.status_code == 403
+
+
+class TestConflictTypeSettingsApi:
+    """Admin-only GET/POST /schedules/conflict-type-settings/ controls which
+    hard-conflict types are flagged at all, tenant-wide."""
+
+    def test_default_both_enabled(self, admin_client):
+        resp = admin_client.get('/api/scheduler/schedules/conflict-type-settings/')
+        assert resp.status_code == 200
+        assert resp.data == {'faculty': True, 'section': True}
+
+    def test_admin_disables_a_type(self, admin_client, tenant):
+        resp = admin_client.post('/api/scheduler/schedules/conflict-type-settings/',
+                                 {'faculty': False}, format='json')
+        assert resp.status_code == 200
+        assert resp.data == {'faculty': False, 'section': True}
+        tenant.refresh_from_db()
+        assert tenant.disabled_conflict_types == ['faculty']
+
+    def test_disabling_stops_blocking_saves(self, admin_client, tenant, period,
+                                            course, faculty, room, beed_sec, dept):
+        e1 = make_entry(tenant, period, course, faculty, room, [beed_sec])
+        course2 = Course.objects.create(tenant=tenant, department=dept, code='GE 2', title='B')
+        admin_client.post('/api/scheduler/schedules/conflict-type-settings/',
+                          {'faculty': False}, format='json')
+        resp = admin_client.post('/api/scheduler/schedules/', {
+            'academic_period': period.pk, 'course': course2.pk, 'faculty': faculty.pk,
+            'room': room.pk, 'time_start': '09:00', 'time_end': '11:00',
+            'days': ['MON'], 'sections': [beed_sec.pk],
+        }, format='json')
+        assert resp.status_code == 201, resp.data
+
+    def test_non_admin_forbidden(self, registrar_client, head_client, viewer_client):
+        for client in (registrar_client, head_client, viewer_client):
+            assert client.get('/api/scheduler/schedules/conflict-type-settings/').status_code == 403
+            assert client.post('/api/scheduler/schedules/conflict-type-settings/',
+                               {'faculty': False}, format='json').status_code == 403
+
+    def test_invalid_type_ignored(self, admin_client, tenant):
+        resp = admin_client.post('/api/scheduler/schedules/conflict-type-settings/',
+                                 {'faculty': False, 'bogus': False}, format='json')
+        assert resp.status_code == 200
+        tenant.refresh_from_db()
+        assert tenant.disabled_conflict_types == ['faculty']

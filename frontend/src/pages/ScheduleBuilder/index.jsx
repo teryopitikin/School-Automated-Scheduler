@@ -96,7 +96,11 @@ export default function ScheduleBuilder() {
   useEffect(() => {
     const onChanged = () => reload();
     window.addEventListener('assistant-data-changed', onChanged);
-    return () => window.removeEventListener('assistant-data-changed', onChanged);
+    window.addEventListener('conflict-settings-changed', onChanged);
+    return () => {
+      window.removeEventListener('assistant-data-changed', onChanged);
+      window.removeEventListener('conflict-settings-changed', onChanged);
+    };
   }, [activePeriod]); // eslint-disable-line
 
   const reload = async () => {

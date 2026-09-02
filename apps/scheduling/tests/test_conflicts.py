@@ -512,3 +512,64 @@ class TestConflictDismissal:
         assert [h['type'] for h in detect_conflicts(e3)['hard']] == ['faculty']
         assert any(h['type'] == 'section' for h in detect_conflicts(e4)['hard']) or \
                any(h['type'] == 'faculty' for h in detect_conflicts(e4)['hard'])
+
+
+class TestConflictTypeToggle:
+    """Admin can turn off flagging for a whole conflict type
+    (Tenant.disabled_conflict_types) — that type stops being reported
+    anywhere and stops blocking saves, everywhere, until re-enabled."""
+
+    def test_disabled_type_not_reported(self, tenant, period, course, course2,
+                                        faculty, room, section):
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
+        assert [h['type'] for h in detect_conflicts(e2)['hard']] == ['faculty']
+
+        tenant.disabled_conflict_types = ['faculty']
+        tenant.save()
+        assert detect_conflicts(e2)['hard'] == []
+
+    def test_other_types_unaffected(self, tenant, period, course, course2,
+                                    faculty, room, section):
+        faculty2 = Faculty.objects.create(
+            tenant=tenant, name='Dr. Jones', employment_type='FULL_TIME',
+            priority_level=3, max_load_units=24,
+        )
+        prog2 = Program.objects.create(tenant=tenant, code='BSF', name='BSF')
+        sec2 = Section.objects.create(tenant=tenant, program=prog2,
+                                      academic_period=period, year_level=1, section_number=1)
+        make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty2, room, 'MON', (9, 0), (11, 0), [section])
+        tenant.disabled_conflict_types = ['faculty']
+        tenant.save()
+        assert [h['type'] for h in detect_conflicts(e2)['hard']] == ['section']
+
+    def test_analyze_period_respects_toggle(self, tenant, period, course, course2,
+                                            faculty, room, section):
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
+        tenant.disabled_conflict_types = ['faculty']
+        tenant.save()
+        from apps.scheduling.conflicts import analyze_period
+        bulk = analyze_period(tenant, period)
+        assert bulk[e1.pk]['hard'] == []
+        assert bulk[e2.pk]['hard'] == []
+
+    def test_re_enabling_brings_it_back(self, tenant, period, course, course2,
+                                        faculty, room, section):
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0))
+        tenant.disabled_conflict_types = ['faculty']
+        tenant.save()
+        assert detect_conflicts(e2)['hard'] == []
+        tenant.disabled_conflict_types = []
+        tenant.save()
+        assert [h['type'] for h in detect_conflicts(e2)['hard']] == ['faculty']
+
+    def test_disabling_both_types_clears_everything(self, tenant, period, course,
+                                                     course2, faculty, room, section):
+        e1 = make_entry(tenant, period, course, faculty, room, 'MON', (8, 0), (10, 0), [section])
+        e2 = make_entry(tenant, period, course2, faculty, room, 'MON', (9, 0), (11, 0), [section])
+        tenant.disabled_conflict_types = ['faculty', 'section']
+        tenant.save()
+        assert detect_conflicts(e2)['hard'] == []

@@ -11,6 +11,10 @@ class Tenant(models.Model):
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    # Hard-conflict types ('faculty', 'section') the admin has turned OFF —
+    # a type not in this list is flagged (the default, and the prior
+    # behavior before this setting existed).
+    disabled_conflict_types = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

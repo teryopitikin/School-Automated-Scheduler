@@ -197,6 +197,13 @@ export default function Dashboard() {
 
   useEffect(() => { loadData(activePeriod); }, [activePeriod]); // eslint-disable-line
 
+  // Refresh after an admin flips a conflict-type flag in Configuration.
+  useEffect(() => {
+    const onChanged = () => loadData(activePeriod);
+    window.addEventListener('conflict-settings-changed', onChanged);
+    return () => window.removeEventListener('conflict-settings-changed', onChanged);
+  }, [activePeriod]); // eslint-disable-line
+
   const summary = stats?.summary || {};
   const facultyBreakdown = stats?.faculty_breakdown || [];
 

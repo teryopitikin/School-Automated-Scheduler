@@ -514,6 +514,27 @@ class ScheduleEntryViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
         d.delete()
         return Response({'restored': True})
 
+    @action(detail=False, methods=['get', 'post'], url_path='conflict-type-settings',
+            permission_classes=[IsAuthenticated, IsAdminRole])
+    def conflict_type_settings(self, request):
+        """Admin-only: which hard-conflict types are flagged at all,
+        tenant-wide. GET/POST body shape: {'faculty': bool, 'section': bool}."""
+        from .conflicts import HARD_CONFLICT_TYPES
+
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        if request.method == 'POST':
+            disabled = set(tenant.disabled_conflict_types or [])
+            for ctype in HARD_CONFLICT_TYPES:
+                if ctype in request.data:
+                    if request.data[ctype]:
+                        disabled.discard(ctype)
+                    else:
+                        disabled.add(ctype)
+            tenant.disabled_conflict_types = sorted(disabled)
+            tenant.save(update_fields=['disabled_conflict_types'])
+        disabled = set(tenant.disabled_conflict_types or [])
+        return Response({t: t not in disabled for t in HARD_CONFLICT_TYPES})
+
     @action(detail=False, methods=['post'])
     def suggest(self, request):
         from .suggestions import generate_suggestions, generate_paired_suggestions

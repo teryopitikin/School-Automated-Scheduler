@@ -37,6 +37,15 @@ def dismissed_signatures(tenant, period):
         tenant=tenant, academic_period=period).values_list('signature', flat=True))
 
 
+HARD_CONFLICT_TYPES = ('faculty', 'section')
+
+
+def enabled_conflict_types(tenant):
+    """Hard-conflict types the admin has left ON (default: both)."""
+    disabled = set(getattr(tenant, 'disabled_conflict_types', None) or [])
+    return {t for t in HARD_CONFLICT_TYPES if t not in disabled}
+
+
 def _overlapping(entry):
     """Entries on the same day whose time range overlaps entry's (touching
     boundaries — one ends exactly when the other starts — do NOT overlap)."""
@@ -100,7 +109,10 @@ def detect_conflicts(entry):
                 '_other': other,
             })
 
-    # Drop pairs the user chose to ignore forever.
+    # Drop types the admin turned off, and pairs the user chose to ignore forever.
+    if hard:
+        enabled = enabled_conflict_types(entry.tenant)
+        hard = [h for h in hard if h['type'] in enabled]
     if hard:
         dismissed = dismissed_signatures(entry.tenant, entry.academic_period)
         if dismissed:
@@ -155,6 +167,7 @@ def analyze_period(tenant, period, entries=None):
     sections_of = {e.pk: {s.pk for s in e.sections.all()} for e in entries}
     result = {e.pk: {'hard': [], 'warnings': []} for e in entries}
     dismissed = dismissed_signatures(tenant, period)
+    enabled = enabled_conflict_types(tenant)
 
     # --- hard conflicts: sweep overlapping pairs per day -------------------
     def add_hard(a, b):
@@ -167,6 +180,8 @@ def analyze_period(tenant, period, entries=None):
                         and bool(sections_of[a.pk] & sections_of[b.pk]))
         if pair_faculty or pair_section:
             ctype = 'faculty' if pair_faculty else 'section'
+            if ctype not in enabled:
+                return
             if dismissed and pair_signature(ctype, a, b) in dismissed:
                 return
         for me, other in ((a, b), (b, a)):

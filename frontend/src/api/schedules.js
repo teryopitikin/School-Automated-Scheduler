@@ -15,3 +15,5 @@ export const fetchStats = (params) => api.get('/schedules/stats/', { params });
 export const dismissConflict = (data) => api.post('/schedules/dismiss-conflict/', data);
 export const fetchDismissals = (params) => api.get('/schedules/dismissals/', { params });
 export const restoreDismissal = (id) => api.post('/schedules/restore-dismissal/', { id });
+export const fetchConflictTypeSettings = () => api.get('/schedules/conflict-type-settings/');
+export const updateConflictTypeSettings = (data) => api.post('/schedules/conflict-type-settings/', data);

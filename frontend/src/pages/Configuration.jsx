@@ -7,11 +7,16 @@ import { Add, Delete, Save } from '@mui/icons-material';
 import { fetchConfig, updateConfig } from '../api/config';
 import { fetchAcademicPeriods } from '../api/academicPeriods';
 import ClaudeAssistantCard from '../components/ClaudeAssistantCard';
+import ConflictFlagsCard from '../components/ConflictFlagsCard';
+import { useAuth } from '../context/AuthContext';
+import { isAdmin } from '../utils/permissions';
 
 const ALL_DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 const GRANULARITY_OPTIONS = [15, 30, 60];
 
 export default function Configuration() {
+  const { user } = useAuth();
+  const admin = isAdmin(user);
   const [periods, setPeriods] = useState([]);
   const [selectedPeriod, setSelectedPeriod] = useState('');
   const [config, setConfig] = useState(null);
@@ -100,6 +105,7 @@ export default function Configuration() {
         <Typography variant="h5" sx={{ mb: 2 }}>Configuration</Typography>
         <Alert severity="info" sx={{ mb: 2.5 }}>No configuration found for this period. Create one from the admin panel or via API.</Alert>
         <ClaudeAssistantCard />
+        {admin && <Box sx={{ mt: 2.5 }}><ConflictFlagsCard /></Box>}
       </Box>
     );
   }
@@ -236,6 +242,7 @@ export default function Configuration() {
 
       <Box sx={{ mt: 2.5 }}>
         <ClaudeAssistantCard />
+        {admin && <Box sx={{ mt: 2.5 }}><ConflictFlagsCard /></Box>}
       </Box>
     </Box>
   );
