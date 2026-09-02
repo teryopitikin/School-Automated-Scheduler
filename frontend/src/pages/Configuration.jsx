@@ -116,7 +116,7 @@ export default function Configuration() {
         <Typography variant="h5">Configuration</Typography>
         <TextField select size="small" value={selectedPeriod} sx={{ minWidth: 250 }}
           onChange={(e) => setSelectedPeriod(e.target.value)}
-          SelectProps={{ native: true }}>
+          SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
           {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </TextField>
       </Box>
@@ -144,7 +144,7 @@ export default function Configuration() {
                 <Grid size={12}>
                   <TextField fullWidth select label="Slot Granularity" value={config.time_slot_granularity_minutes}
                     onChange={(e) => setConfig({ ...config, time_slot_granularity_minutes: parseInt(e.target.value) })}
-                    SelectProps={{ native: true }}>
+                    SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                     {GRANULARITY_OPTIONS.map((g) => <option key={g} value={g}>{g} minutes</option>)}
                   </TextField>
                 </Grid>

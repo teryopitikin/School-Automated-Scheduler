@@ -322,27 +322,30 @@ export default function ScheduleBuilder() {
           {viewTab === SECTION && (
             <TextField select size="small" fullWidth label="Section" value={selectedSection}
               onChange={(e) => { setSelectedSection(e.target.value); setSelectedCourse(null); }}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               <option value={ALL_SECTIONS}>All sections (everything)</option>
               {sections.map((s) => <option key={s.id} value={s.id}>{sectionLabel(s)}</option>)}
             </TextField>
           )}
           {viewTab === PROGRAM && (
             <TextField select size="small" fullWidth label="Program" value={selectedProgram}
-              onChange={(e) => setSelectedProgram(e.target.value)} SelectProps={{ native: true }}>
+              onChange={(e) => setSelectedProgram(e.target.value)} SelectProps={{ native: true }}
+              InputLabelProps={{ shrink: true }}>
               <option value={ALL_PROGRAMS}>All programs</option>
               {programList.map((p) => <option key={p} value={p}>{p}</option>)}
             </TextField>
           )}
           {viewTab === FACULTY && (
             <TextField select size="small" fullWidth label="Faculty" value={selectedFaculty}
-              onChange={(e) => setSelectedFaculty(e.target.value)} SelectProps={{ native: true }}>
+              onChange={(e) => setSelectedFaculty(e.target.value)} SelectProps={{ native: true }}
+              InputLabelProps={{ shrink: true }}>
               {facultyList.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
             </TextField>
           )}
           {viewTab === ROOM && (
             <TextField select size="small" fullWidth label="Room" value={selectedRoom}
-              onChange={(e) => setSelectedRoom(e.target.value)} SelectProps={{ native: true }}>
+              onChange={(e) => setSelectedRoom(e.target.value)} SelectProps={{ native: true }}
+              InputLabelProps={{ shrink: true }}>
               {roomsList.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
             </TextField>
           )}

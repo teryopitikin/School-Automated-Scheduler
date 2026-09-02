@@ -151,18 +151,18 @@ export default function EditDialog({ open, onClose, entry, onSaved }) {
         </Box>
 
         <Grid container spacing={2}>
-          <Grid size={6}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <TextField fullWidth select label="Faculty" value={form.faculty}
               onChange={(e) => setForm({ ...form, faculty: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               <option value="">TBA</option>
               {faculty.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </TextField>
           </Grid>
-          <Grid size={6}>
+          <Grid size={{ xs: 12, sm: 6 }}>
             <TextField fullWidth select label="Room" value={form.room}
               onChange={(e) => setForm({ ...form, room: e.target.value })}
-              SelectProps={{ native: true }}
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}
               helperText={freeRoomIds
                 ? `${freeRoomIds.size} room${freeRoomIds.size === 1 ? '' : 's'} free at this time`
                 : 'Checking room availability…'}>
@@ -191,7 +191,7 @@ export default function EditDialog({ open, onClose, entry, onSaved }) {
             <Grid size={4}>
               <TextField fullWidth select label="Day" value={form.day_of_week}
                 onChange={(e) => setForm({ ...form, day_of_week: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
               </TextField>
             </Grid>
@@ -209,7 +209,7 @@ export default function EditDialog({ open, onClose, entry, onSaved }) {
           <Grid size={12}>
             <TextField fullWidth select label="Load Type" value={form.load_classification}
               onChange={(e) => setForm({ ...form, load_classification: e.target.value })}
-              SelectProps={{ native: true }}>
+              SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
               {LOAD_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
             </TextField>
           </Grid>

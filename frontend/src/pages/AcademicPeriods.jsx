@@ -143,7 +143,7 @@ export default function AcademicPeriods() {
             <Grid size={4}>
               <TextField fullWidth select label="Semester" value={form.semester}
                 onChange={(e) => setForm({ ...form, semester: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {SEMESTERS.map((s) => <option key={s} value={s}>{s}</option>)}
               </TextField>
             </Grid>
@@ -158,7 +158,7 @@ export default function AcademicPeriods() {
             <Grid size={2}>
               <TextField fullWidth select label="Status" value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </TextField>
             </Grid>

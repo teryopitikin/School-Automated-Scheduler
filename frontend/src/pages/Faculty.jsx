@@ -175,7 +175,7 @@ export default function Faculty() {
             <Grid size={6}>
               <TextField fullWidth select label="Employment Type" value={form.employment_type}
                 onChange={(e) => setForm({ ...form, employment_type: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 <option value="FULL_TIME">Full-time</option>
                 <option value="PART_TIME">Part-time</option>
               </TextField>
@@ -202,7 +202,7 @@ export default function Faculty() {
         <DialogContent>
           <TextField select size="small" label="Academic Period" value={availPeriod} sx={{ mb: 2, minWidth: 250 }}
             onChange={(e) => { setAvailPeriod(e.target.value); if (availFaculty) loadAvailability(availFaculty.id, e.target.value); }}
-            SelectProps={{ native: true }}>
+            SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
             {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </TextField>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>

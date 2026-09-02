@@ -136,7 +136,7 @@ export default function Courses() {
             <Grid size={6}>
               <TextField fullWidth select label="Department" value={form.department}
                 onChange={(e) => setForm({ ...form, department: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
               </TextField>
             </Grid>

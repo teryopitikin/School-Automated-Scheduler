@@ -126,7 +126,7 @@ export default function Rooms() {
             <Grid size={6}>
               <TextField fullWidth select label="Type" value={form.room_type}
                 onChange={(e) => setForm({ ...form, room_type: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {ROOM_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
               </TextField>
             </Grid>

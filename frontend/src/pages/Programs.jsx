@@ -180,7 +180,7 @@ export default function Programs() {
             <Grid size={12}>
               <TextField fullWidth select label="Academic Period" value={sectionForm.academic_period}
                 onChange={(e) => setSectionForm({ ...sectionForm, academic_period: e.target.value })}
-                SelectProps={{ native: true }}>
+                SelectProps={{ native: true }} InputLabelProps={{ shrink: true }}>
                 {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </TextField>
             </Grid>
